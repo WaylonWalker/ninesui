@@ -2,6 +2,8 @@
 from typing import Callable, Optional, Type
 from pydantic import BaseModel
 from textual import log
+from textual.widgets import Static
+from rich.pretty import Pretty
 
 
 class Command:
@@ -32,6 +34,10 @@ class CommandSet:
 
 # =========================== ninesui/core/router.py ===========================
 from dataclasses import dataclass
+from textual.widgets import DataTable, Static
+from textual.containers import Container
+from rich.pretty import Pretty
+from textual.containers import VerticalScroll
 
 
 @dataclass
@@ -46,11 +52,10 @@ class Router:
         self.app = app
         self.commands = commands
         self.stack: list[CommandContext] = []
-        self.output = None
         self.highlighted_index = 0
 
-    def set_output_widget(self, widget):
-        self.output = widget
+    def set_output_widget(self, container: Container):
+        self.output_container = container
 
     def push_command(self, cmd_str: str):
         cmd = self.commands.get(cmd_str)
@@ -61,23 +66,37 @@ class Router:
             self.refresh_output()
 
     def refresh_output(self):
-        if not self.stack or not self.output:
+        if not self.stack:
             return
+
         ctx = self.stack[-1]
         data = ctx.data
-        self.output.clear(columns=True)
-        if not data:
+        self.output_container.remove_children()
+
+        if isinstance(data, BaseModel):
+            detail = Static(data.render(), markup=False, classes="detail")
+            detail.focus()
+            self.output_container.mount(detail)
             return
 
-        model = ctx.command.model
-        fields = ctx.command.visible_fields or model.model_fields.keys()
-        self.output.add_columns(*fields)
+        if isinstance(data, list):
+            if not data:
+                return
+            model = ctx.command.model
+            fields = ctx.command.visible_fields or model.model_fields.keys()
 
-        for i, item in enumerate(data):
-            self.output.add_row(*(str(getattr(item, f, "")) for f in fields), key=i)
+            table = DataTable()
+            table.cursor_type = "row"
+            table.show_cursor = True
+            table.focus()
+            table.add_columns(*fields)
 
-        # Register dynamic sort hotkeys
-        self.app.assign_sort_hotkeys(fields)
+            for i, item in enumerate(data):
+                table.add_row(*(str(getattr(item, f, "")) for f in fields), key=i)
+
+            self.output_container.mount(table)
+            self.app.output = table
+            self.app.assign_sort_hotkeys(fields)
 
     def drill_in(self):
         ctx = self.stack[-1]
@@ -91,7 +110,7 @@ class Router:
             if isinstance(result, list):
                 self.stack.append(CommandContext(command=ctx.command, data=result))
             else:
-                self.stack.append(CommandContext(command=ctx.command, data=[result]))
+                self.stack.append(CommandContext(command=ctx.command, data=result))
             self.refresh_output()
 
     def jump_owner(self):
@@ -102,7 +121,7 @@ class Router:
             if isinstance(result, list):
                 self.stack.append(CommandContext(command=ctx.command, data=result))
             else:
-                self.stack.append(CommandContext(command=ctx.command, data=[result]))
+                self.stack.append(CommandContext(command=ctx.command, data=result))
             self.refresh_output()
 
     def go_back(self):
@@ -132,7 +151,7 @@ from textual.binding import Binding
 
 
 class NinesUI(App):
-    CSS_PATH = "style.css"
+    CSS_PATH = "styles.css"
     BINDINGS = [
         Binding("escape", "go_back_or_quit", "Back/Quit"),
         Binding(":", "focus_command", "Command"),
@@ -145,18 +164,19 @@ class NinesUI(App):
         self.command_input = Input(placeholder=":command")
         self.output = DataTable()
         self.meta_header = MetaHeader(metadata)
+        self.output_container = Container(self.output, id="output-container")
         self._dynamic_sort_keys = {}  # key: sort function
         self._last_sort = {"key": None, "reverse": False}
 
     def compose(self) -> ComposeResult:
         yield self.meta_header
         yield self.command_input
-        yield self.output
+        yield self.output_container
         yield Footer()
 
     def on_mount(self):
         self.command_input.display = False
-        self.router.set_output_widget(self.output)
+        self.router.set_output_widget(self.output_container)
         self.output.cursor_type = "row"
         self.output.show_cursor = True
         self.output.focus()
@@ -179,9 +199,6 @@ class NinesUI(App):
         self.command_input.display = False
         self.command_input.blur()
         self.router.push_command(cmd)
-
-    # def on_data_table_row_highlighted(self, message: DataTable.RowHighlighted):
-    #     self.router.highlighted_index = message.row_key
 
     def on_data_table_row_highlighted(self, message: DataTable.RowHighlighted):
         self.router.highlighted_index = message.row_key.value
@@ -225,12 +242,18 @@ class NinesUI(App):
 # =========================== apps/filesystem/models.py ===========================
 from pydantic import BaseModel
 from pathlib import Path
+from rich.syntax import Syntax
 
 
 class FileEntry(BaseModel):
     name: str
     path: str
     is_dir: bool
+
+    def render(self):
+        syntax = Syntax.from_path(self.path)
+        return syntax
+        # return Path(self.path).read_text()
 
 
 # =========================== apps/filesystem/config.py ===========================
@@ -249,23 +272,18 @@ def list_dir(path: str = current_path) -> list[FileEntry]:
 def drill(entry: FileEntry):
     if entry.is_dir:
         log("entry is a dir")
-        log("entry is a dir")
-        log("entry is a dir")
-        log("entry is a dir")
-        log("entry is a dir")
-        log("entry is a dir")
-        log("entry is a dir")
         return list_dir(entry.path)
-    return entry  # or maybe open and show content later
+    try:
+        content = Path(entry.path).read_text(errors="ignore")
+    except Exception as e:
+        content = f"<< ERROR: {e} >>"
+    return FileEntry(name=entry.name, path=entry.path, is_dir=False)
 
 
 def jump(entry: FileEntry):
     parent = str(Path(entry.path).parent)
     return list_dir(parent)
 
-
-# from ninesui.core.commands import Command, CommandSet
-# from apps.filesystem.models import FileEntry
 
 commands = CommandSet(
     [
@@ -285,10 +303,8 @@ metadata = {
     "subtitle": "Use :list to list files. Enter to drill in. Shift+J to go up.",
 }
 
+
 # =========================== __main__.py ===========================
 if __name__ == "__main__":
-    # from apps.filesystem.config import commands, metadata
-
-    # NinesUI.run(title=metadata["title"], metadata=metadata, commands=commands)
     ui = NinesUI(metadata=metadata, commands=commands)
     ui.run()
