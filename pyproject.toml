@@ -8,3 +8,8 @@ dependencies = [
     "pydantic>=2.11.4",
     "textual>=3.2.0",
 ]
+
+[dependency-groups]
+dev = [
+    "textual-dev>=1.7.0",
+]

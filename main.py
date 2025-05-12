@@ -1,6 +1,7 @@
 # =========================== ninesui/core/commands.py ===========================
 from typing import Callable, Optional, Type
 from pydantic import BaseModel
+from textual import log
 
 
 class Command:
@@ -41,7 +42,8 @@ class CommandContext:
 
 
 class Router:
-    def __init__(self, commands: CommandSet):
+    def __init__(self, app, commands: CommandSet):
+        self.app = app
         self.commands = commands
         self.stack: list[CommandContext] = []
         self.output = None
@@ -66,6 +68,7 @@ class Router:
         self.output.clear(columns=True)
         if not data:
             return
+
         model = ctx.command.model
         fields = ctx.command.visible_fields or model.model_fields.keys()
         self.output.add_columns(*fields)
@@ -73,9 +76,13 @@ class Router:
         for i, item in enumerate(data):
             self.output.add_row(*(str(getattr(item, f, "")) for f in fields), key=i)
 
+        # Register dynamic sort hotkeys
+        self.app.assign_sort_hotkeys(fields)
+
     def drill_in(self):
         ctx = self.stack[-1]
         index = self.highlighted_index
+        log(f"drilling into {ctx.data[index]} using index {index}")
         if index >= len(ctx.data):
             return
         item = ctx.data[index]
@@ -133,11 +140,13 @@ class NinesUI(App):
 
     def __init__(self, metadata: dict, commands: CommandSet, **kwargs):
         super().__init__(**kwargs)
-        self.router = Router(commands)
+        self.router = Router(self, commands)
         self.metadata = metadata
         self.command_input = Input(placeholder=":command")
         self.output = DataTable()
         self.meta_header = MetaHeader(metadata)
+        self._dynamic_sort_keys = {}  # key: sort function
+        self._last_sort = {"key": None, "reverse": False}
 
     def compose(self) -> ComposeResult:
         yield self.meta_header
@@ -148,6 +157,9 @@ class NinesUI(App):
     def on_mount(self):
         self.command_input.display = False
         self.router.set_output_widget(self.output)
+        self.output.cursor_type = "row"
+        self.output.show_cursor = True
+        self.output.focus()
         self.router.push_command(":list")
 
     def action_focus_command(self):
@@ -172,7 +184,7 @@ class NinesUI(App):
     #     self.router.highlighted_index = message.row_key
 
     def on_data_table_row_highlighted(self, message: DataTable.RowHighlighted):
-        self.router.highlighted_index = int(message.row_key)
+        self.router.highlighted_index = message.row_key.value
 
     def on_data_table_row_selected(self, message: DataTable.RowSelected):
         self.router.drill_in()
@@ -183,6 +195,31 @@ class NinesUI(App):
             self.router.jump_owner()
         elif key == "enter":
             self.router.drill_in()
+        elif key in self._dynamic_sort_keys:
+            self._dynamic_sort_keys[key]()
+
+    def assign_sort_hotkeys(self, fields: list[str]):
+        taken = set()
+        self._dynamic_sort_keys.clear()
+        for field in fields:
+            for char in field:
+                key = char.upper()
+                if key not in taken and key.isalpha():
+                    taken.add(key)
+
+                    def sorter(field=field):
+                        reverse = False
+                        if self._last_sort["key"] == field:
+                            reverse = not self._last_sort["reverse"]
+                        self._last_sort["key"] = field
+                        self._last_sort["reverse"] = reverse
+
+                        ctx = self.router.stack[-1]
+                        ctx.data.sort(key=lambda x: getattr(x, field), reverse=reverse)
+                        self.router.refresh_output()
+
+                    self._dynamic_sort_keys[key] = sorter
+                    break
 
 
 # =========================== apps/filesystem/models.py ===========================
@@ -211,6 +248,13 @@ def list_dir(path: str = current_path) -> list[FileEntry]:
 
 def drill(entry: FileEntry):
     if entry.is_dir:
+        log("entry is a dir")
+        log("entry is a dir")
+        log("entry is a dir")
+        log("entry is a dir")
+        log("entry is a dir")
+        log("entry is a dir")
+        log("entry is a dir")
         return list_dir(entry.path)
     return entry  # or maybe open and show content later
 
@@ -231,7 +275,7 @@ commands = CommandSet(
             fetch_fn=list_dir,
             drill_fn=drill,
             jump_fn=jump,
-            visible_fields=["name", "is_dir"],
+            visible_fields=["name", "path", "is_dir"],
         )
     ]
 )
