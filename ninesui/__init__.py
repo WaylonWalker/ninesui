@@ -19,8 +19,14 @@ class Command:
         self.name = name
         self.model = model
         self.aliases = aliases
+        if fetch_fn is None and hasattr(model, "_list"):
+            fetch_fn = model._list
         self.fetch_fn = fetch_fn
+        if drill_fn is None and hasattr(model, "drill"):
+            drill_fn = model.drill
         self.drill_fn = drill_fn
+        if jump_fn is None and hasattr(model, "jump"):
+            jump_fn = model.jump
         self.jump_fn = jump_fn
         self.visible_fields = visible_fields
 
@@ -69,6 +75,17 @@ class Router:
         self.output_container = container
 
     def push_command(self, cmd_str: str):
+        if not cmd_str.startswith(":"):
+            cmd_str = f":{cmd_str}"
+        if cmd_str == ":commands":
+            commands = list(self.commands.commands.keys())
+            self.app.notify(f"Available commands: {', '.join(commands)}")
+            # ctx = CommandContext(
+            #     command=None, data=["\n", "Available Commands", *commands]
+            # )
+            # self.stack.append(ctx)
+            # self.refresh_output()
+            return
         cmd = self.commands.get(cmd_str)
         if cmd:
             self.app.notify(f'Running command "{cmd_str}"')
@@ -110,21 +127,26 @@ class Router:
         if isinstance(data, list):
             if not data:
                 return
-            model = ctx.command.model
-            fields = ctx.command.visible_fields or model.model_fields.keys()
+            if isinstance(data[0], BaseModel):
+                model = ctx.command.model
+                fields = ctx.command.visible_fields or model.model_fields.keys()
 
-            table = DataTable()
-            table.cursor_type = "row"
-            table.show_cursor = True
-            table.focus()
-            table.add_columns(*fields)
+                table = DataTable()
+                table.cursor_type = "row"
+                table.show_cursor = True
+                table.focus()
+                table.add_columns(*fields)
 
-            for i, item in enumerate(data):
-                table.add_row(*(str(getattr(item, f, "")) for f in fields), key=i)
+                for i, item in enumerate(data):
+                    table.add_row(*(str(getattr(item, f, "")) for f in fields), key=i)
 
-            self.output_container.mount(table)
-            self.app.output = table
-            self.app.assign_sort_hotkeys(fields)
+                self.output_container.mount(table)
+                self.app.output = table
+                self.app.assign_sort_hotkeys(fields)
+            if isinstance(data[0], str):
+                self.output_container.mount(Static("\n".join(data), classes="detail"))
+                self.app.output = self.output_container
+                return
 
     def drill_in(self):
         ctx = self.stack[-1]
@@ -207,7 +229,7 @@ class NinesUI(App):
         self.output.cursor_type = "row"
         self.output.show_cursor = True
         self.output.focus()
-        self.router.push_command(":list")
+        self.router.push_command(":commands")
 
     def action_focus_command(self):
         self.command_input.display = True

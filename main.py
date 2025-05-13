@@ -151,72 +151,69 @@ class DiskUsageEntry(BaseModel):
     size_bytes: int
     is_dir: bool
 
+    def get_disk_usage(self, path: str) -> int:
+        total = 0
+        if path is None:
+            path = self.path
+        for root, dirs, files in os.walk(path, onerror=lambda e: None):
+            for f in files:
+                try:
+                    fp = os.path.join(root, f)
+                    total += os.path.getsize(fp)
+                except Exception:
+                    continue
+        return total
 
-def get_disk_usage(path: str) -> int:
-    total = 0
-    for root, dirs, files in os.walk(path, onerror=lambda e: None):
-        for f in files:
+    def drill(self):
+        if self.is_dir:
+            return list_du(self.path)
+        return self
+
+    def jump(self):
+        return self.list(str(Path(self.path).parent))
+
+    def _list(ctx=None):
+        path = os.getcwd()
+        entries = []
+        for entry in Path(path).iterdir():
             try:
-                fp = os.path.join(root, f)
-                total += os.path.getsize(fp)
+                size = (
+                    self.get_disk_usage(str(entry))
+                    if entry.is_dir()
+                    else entry.stat().st_size
+                )
+                entries.append(
+                    DiskUsageEntry(
+                        name=entry.name,
+                        path=str(entry),
+                        size_bytes=size,
+                        is_dir=entry.is_dir(),
+                    )
+                )
             except Exception:
                 continue
-    return total
+        return entries
 
 
-def drill_du(entry: DiskUsageEntry):
-    if entry.is_dir:
-        return list_du(entry.path)
-    return entry  # show size info
-
-
-def jump_du(entry: DiskUsageEntry):
-    return list_du(str(Path(entry.path).parent))
-
-
-def list_du(ctx=None) -> list[DiskUsageEntry]:
-    path = os.getcwd()
-    entries = []
-    for entry in Path(path).iterdir():
-        try:
-            size = (
-                get_disk_usage(str(entry)) if entry.is_dir() else entry.stat().st_size
-            )
-            entries.append(
-                DiskUsageEntry(
-                    name=entry.name,
-                    path=str(entry),
-                    size_bytes=size,
-                    is_dir=entry.is_dir(),
-                )
-            )
-        except Exception:
-            continue
-    return entries
-
-
-class DiskUsage(Command):
-    def __init__(self):
-        super().__init__(
-            name="disk-usage",
-            aliases=["du"],
-            model=DiskUsageEntry,
-            # fetch_fn=list_du,
-            # drill_fn=drill_du,
-            # jump_fn=jump_du,
-            visible_fields=["name", "size_bytes", "is_dir"],
-        )
-
-    def fetch_fn(self, ctx=None):
-        return list_du(ctx)
-
-    def drill_fn(self, entry: DiskUsageEntry):
-        if entry.is_dir:
-            return list_du(entry.path)
-        return entry
-
-    def jump_fn(self, entry: DiskUsageEntry):
-        return list_du(str(Path(entry.path).parent))
+# class DiskUsage(Command):
+#     def __init__(self):
+#         super().__init__(
+#             name="disk-usage",
+#             aliases=["du"],
+#             model=DiskUsageEntry,
+#             visible_fields=["name", "size_bytes", "is_dir"],
+#         )
+#
+#     def fetch_fn(self, ctx=None):
+#         return list_du(ctx)
+#
+#     def drill_fn(self, entry: DiskUsageEntry):
+#         if entry.is_dir:
+#             return list_du(entry.path)
+#         return entry
+#
+#     def jump_fn(self, entry: DiskUsageEntry):
+#         return list_du(str(Path(entry.path).parent))
 
 
 commands = CommandSet(
@@ -243,9 +240,6 @@ commands = CommandSet(
             name="disk-usage",
             aliases=["du"],
             model=DiskUsageEntry,
-            fetch_fn=list_du,
-            drill_fn=drill_du,
-            jump_fn=jump_du,
             visible_fields=["name", "size_bytes", "is_dir"],
         ),
     ]
