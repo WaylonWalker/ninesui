@@ -1,248 +1,10 @@
-# =========================== ninesui/core/commands.py ===========================
-from typing import Callable, Optional, Type
-from pydantic import BaseModel
-from textual import log
-from textual.widgets import Static
-from rich.pretty import Pretty
-
-
-class Command:
-    def __init__(
-        self,
-        name: str,
-        model: Type[BaseModel],
-        fetch_fn: Callable[..., list[BaseModel]],
-        drill_fn: Optional[Callable[[BaseModel], list[BaseModel] | BaseModel]] = None,
-        jump_fn: Optional[Callable[[BaseModel], list[BaseModel] | BaseModel]] = None,
-        visible_fields: Optional[list[str]] = None,
-    ):
-        self.name = name
-        self.model = model
-        self.fetch_fn = fetch_fn
-        self.drill_fn = drill_fn
-        self.jump_fn = jump_fn
-        self.visible_fields = visible_fields
-
-
-class CommandSet:
-    def __init__(self, commands: list[Command]):
-        self.commands = {f":{cmd.name}": cmd for cmd in commands}
-
-    def get(self, command_name: str) -> Optional[Command]:
-        return self.commands.get(command_name)
-
-
-# =========================== ninesui/core/router.py ===========================
-from dataclasses import dataclass
-from textual.widgets import DataTable, Static
-from textual.containers import Container
-from rich.pretty import Pretty
-from textual.containers import VerticalScroll
-
-
-@dataclass
-class CommandContext:
-    command: Command
-    data: list[BaseModel]
-    selected_index: int = 0
-
-
-class Router:
-    def __init__(self, app, commands: CommandSet):
-        self.app = app
-        self.commands = commands
-        self.stack: list[CommandContext] = []
-        self.highlighted_index = 0
-
-    def set_output_widget(self, container: Container):
-        self.output_container = container
-
-    def push_command(self, cmd_str: str):
-        cmd = self.commands.get(cmd_str)
-        if cmd:
-            data = cmd.fetch_fn()
-            ctx = CommandContext(command=cmd, data=data)
-            self.stack.append(ctx)
-            self.refresh_output()
-
-    def refresh_output(self):
-        if not self.stack:
-            return
-
-        ctx = self.stack[-1]
-        data = ctx.data
-        self.output_container.remove_children()
-
-        if isinstance(data, BaseModel):
-            detail = Static(data.render(), markup=False, classes="detail")
-            detail.focus()
-            self.output_container.mount(detail)
-            return
-
-        if isinstance(data, list):
-            if not data:
-                return
-            model = ctx.command.model
-            fields = ctx.command.visible_fields or model.model_fields.keys()
-
-            table = DataTable()
-            table.cursor_type = "row"
-            table.show_cursor = True
-            table.focus()
-            table.add_columns(*fields)
-
-            for i, item in enumerate(data):
-                table.add_row(*(str(getattr(item, f, "")) for f in fields), key=i)
-
-            self.output_container.mount(table)
-            self.app.output = table
-            self.app.assign_sort_hotkeys(fields)
-
-    def drill_in(self):
-        ctx = self.stack[-1]
-        index = self.highlighted_index
-        log(f"drilling into {ctx.data[index]} using index {index}")
-        if index >= len(ctx.data):
-            return
-        item = ctx.data[index]
-        if ctx.command.drill_fn:
-            result = ctx.command.drill_fn(item)
-            if isinstance(result, list):
-                self.stack.append(CommandContext(command=ctx.command, data=result))
-            else:
-                self.stack.append(CommandContext(command=ctx.command, data=result))
-            self.refresh_output()
-
-    def jump_owner(self):
-        ctx = self.stack[-1]
-        item = ctx.data[self.highlighted_index]
-        if ctx.command.jump_fn:
-            result = ctx.command.jump_fn(item)
-            if isinstance(result, list):
-                self.stack.append(CommandContext(command=ctx.command, data=result))
-            else:
-                self.stack.append(CommandContext(command=ctx.command, data=result))
-            self.refresh_output()
-
-    def go_back(self):
-        if len(self.stack) > 1:
-            self.stack.pop()
-            self.refresh_output()
-            return True
-        return False
-
-
-# =========================== ninesui/core/views.py ===========================
-from textual.widgets import Static
-
-
-class MetaHeader(Static):
-    def __init__(self, metadata: dict):
-        title = metadata.get("title", "")
-        subtitle = metadata.get("subtitle", "")
-        super().__init__(f"{title} — {subtitle}")
-
-
-# =========================== ninesui/core/app.py ===========================
-from textual.app import App, ComposeResult
-from textual.containers import Container
-from textual.widgets import Header, Footer, Input, DataTable
-from textual.binding import Binding
-
-
-class NinesUI(App):
-    CSS_PATH = "styles.css"
-    BINDINGS = [
-        Binding("escape", "go_back_or_quit", "Back/Quit"),
-        Binding(":", "focus_command", "Command"),
-    ]
-
-    def __init__(self, metadata: dict, commands: CommandSet, **kwargs):
-        super().__init__(**kwargs)
-        self.router = Router(self, commands)
-        self.metadata = metadata
-        self.command_input = Input(placeholder=":command")
-        self.output = DataTable()
-        self.meta_header = MetaHeader(metadata)
-        self.output_container = Container(self.output, id="output-container")
-        self._dynamic_sort_keys = {}  # key: sort function
-        self._last_sort = {"key": None, "reverse": False}
-
-    def compose(self) -> ComposeResult:
-        yield self.meta_header
-        yield self.command_input
-        yield self.output_container
-        yield Footer()
-
-    def on_mount(self):
-        self.command_input.display = False
-        self.router.set_output_widget(self.output_container)
-        self.output.cursor_type = "row"
-        self.output.show_cursor = True
-        self.output.focus()
-        self.router.push_command(":list")
-
-    def action_focus_command(self):
-        self.command_input.display = True
-        self.command_input.focus()
-
-    def action_go_back_or_quit(self):
-        if self.command_input.has_focus:
-            self.command_input.blur()
-            self.command_input.display = False
-        elif not self.router.go_back():
-            self.exit()
-
-    def on_input_submitted(self, message: Input.Submitted):
-        cmd = message.value.strip()
-        self.command_input.value = ""
-        self.command_input.display = False
-        self.command_input.blur()
-        self.router.push_command(cmd)
-
-    def on_data_table_row_highlighted(self, message: DataTable.RowHighlighted):
-        self.router.highlighted_index = message.row_key.value
-
-    def on_data_table_row_selected(self, message: DataTable.RowSelected):
-        self.router.drill_in()
-
-    def on_key(self, event):
-        key = event.key
-        if key == "J":
-            self.router.jump_owner()
-        elif key == "enter":
-            self.router.drill_in()
-        elif key in self._dynamic_sort_keys:
-            self._dynamic_sort_keys[key]()
-
-    def assign_sort_hotkeys(self, fields: list[str]):
-        taken = set()
-        self._dynamic_sort_keys.clear()
-        for field in fields:
-            for char in field:
-                key = char.upper()
-                if key not in taken and key.isalpha():
-                    taken.add(key)
-
-                    def sorter(field=field):
-                        reverse = False
-                        if self._last_sort["key"] == field:
-                            reverse = not self._last_sort["reverse"]
-                        self._last_sort["key"] = field
-                        self._last_sort["reverse"] = reverse
-
-                        ctx = self.router.stack[-1]
-                        ctx.data.sort(key=lambda x: getattr(x, field), reverse=reverse)
-                        self.router.refresh_output()
-
-                    self._dynamic_sort_keys[key] = sorter
-                    break
-
-
 # =========================== apps/filesystem/models.py ===========================
+import os
 from pydantic import BaseModel
 from pathlib import Path
 from rich.syntax import Syntax
+from ninesui import CommandSet, Command, NinesUI
+from textual import log
 
 
 class FileEntry(BaseModel):
@@ -256,16 +18,72 @@ class FileEntry(BaseModel):
         # return Path(self.path).read_text()
 
 
+class DiskEntry(BaseModel):
+    device: str  # e.g. /dev/sda1
+    mountpoint: str  # e.g. / or /home
+    fstype: str  # e.g. ext4, vfat
+    total: int  # in bytes
+    used: int
+    free: int
+    percent: float
+
+    def render(self):
+        import shutil
+        from rich.table import Table
+
+        table = Table(title=f"Disk Info for {self.device}")
+        table.add_column("Field")
+        table.add_column("Value")
+        table.add_row("Device", self.device)
+        table.add_row("Mountpoint", self.mountpoint)
+        table.add_row("Filesystem", self.fstype)
+        table.add_row(
+            "Total",
+            shutil._ntuple_diskusage(
+                (self.total, self.used, self.free)
+            ).total.__str__(),
+        )
+        table.add_row("Used", f"{self.used} bytes")
+        table.add_row("Free", f"{self.free} bytes")
+        table.add_row("Used %", f"{self.percent:.1f}%")
+        return table
+
+
+import psutil
+# from .models import DiskEntry
+
+
+def list_disks(ctx=None) -> list[DiskEntry]:
+    entries = []
+    for part in psutil.disk_partitions(all=False):
+        try:
+            usage = psutil.disk_usage(part.mountpoint)
+        except PermissionError:
+            continue
+        entries.append(
+            DiskEntry(
+                device=part.device,
+                mountpoint=part.mountpoint,
+                fstype=part.fstype,
+                total=usage.total,
+                used=usage.used,
+                free=usage.free,
+                percent=usage.percent,
+            )
+        )
+    return entries
+
+
 # =========================== apps/filesystem/config.py ===========================
-import os
 
 current_path = os.getcwd()
 
 
-def list_dir(path: str = current_path) -> list[FileEntry]:
+def list_dir(path: str = None) -> list[FileEntry]:
+    target_path = path if path is not None else current_path
     return [
         FileEntry(name=e.name, path=str(e), is_dir=e.is_dir())
-        for e in Path(path).iterdir()
+        for e in Path(target_path).iterdir()
     ]
 
 
@@ -285,18 +103,154 @@ def jump(entry: FileEntry):
     return list_dir(parent)
 
 
+def get_current_path(ctx=None) -> str:
+    log(f"Getting current path with context: {ctx}")
+    if ctx and ctx.data:
+        # If we're viewing a single file, use its parent directory
+        if isinstance(ctx.data, FileEntry):
+            path = ctx.data.path
+            result = str(Path(path).parent)
+            log(f"Using file's parent directory: {result}")
+            return result
+        # If we have a list of items, use their directory
+        elif isinstance(ctx.data, list) and ctx.data:
+            if isinstance(ctx.data[0], DiskEntry):
+                path = ctx.data[0].mountpoint
+            elif isinstance(ctx.data[0], FileEntry):
+                path = ctx.data[0].path
+            else:
+                path = os.getcwd()
+            result = str(Path(path).parent)
+            log(f"Using list context path: {result}")
+            return result
+        elif isinstance(ctx.data, DiskEntry):
+            return ctx.data.mountpoint
+    log(f"Using default current_path: {current_path}")
+    return current_path
+
+
+def list_with_context(ctx=None) -> list[FileEntry]:
+    path = get_current_path(ctx)
+    log(f"Listing directory with path: {path}")
+    return list_dir(path)
+
+
+def drill_disk(entry: DiskEntry):
+    # Treat as a folder view
+    return list_dir(entry.mountpoint)
+
+
+def jump_disk(entry: DiskEntry):
+    # Return to list of disks
+    return list_disks()
+
+
+class DiskUsageEntry(BaseModel):
+    name: str
+    path: str
+    size_bytes: int
+    is_dir: bool
+
+
+def get_disk_usage(path: str) -> int:
+    total = 0
+    for root, dirs, files in os.walk(path, onerror=lambda e: None):
+        for f in files:
+            try:
+                fp = os.path.join(root, f)
+                total += os.path.getsize(fp)
+            except Exception:
+                continue
+    return total
+
+
+def drill_du(entry: DiskUsageEntry):
+    if entry.is_dir:
+        return list_du(entry.path)
+    return entry  # show size info
+
+
+def jump_du(entry: DiskUsageEntry):
+    return list_du(str(Path(entry.path).parent))
+
+
+def list_du(ctx=None) -> list[DiskUsageEntry]:
+    path = os.getcwd()
+    entries = []
+    for entry in Path(path).iterdir():
+        try:
+            size = (
+                get_disk_usage(str(entry)) if entry.is_dir() else entry.stat().st_size
+            )
+            entries.append(
+                DiskUsageEntry(
+                    name=entry.name,
+                    path=str(entry),
+                    size_bytes=size,
+                    is_dir=entry.is_dir(),
+                )
+            )
+        except Exception:
+            continue
+    return entries
+
+
+class DiskUsage(Command):
+    def __init__(self):
+        super().__init__(
+            name="disk-usage",
+            aliases=["du"],
+            model=DiskUsageEntry,
+            # fetch_fn=list_du,
+            # drill_fn=drill_du,
+            # jump_fn=jump_du,
+            visible_fields=["name", "size_bytes", "is_dir"],
+        )
+
+    def fetch_fn(self, ctx=None):
+        return list_du(ctx)
+
+    def drill_fn(self, entry: DiskUsageEntry):
+        if entry.is_dir:
+            return list_du(entry.path)
+        return entry
+
+    def jump_fn(self, entry: DiskUsageEntry):
+        return list_du(str(Path(entry.path).parent))
+
+
 commands = CommandSet(
     [
         Command(
             name="list",
+            aliases=["ls"],
             model=FileEntry,
-            fetch_fn=list_dir,
+            fetch_fn=list_with_context,
             drill_fn=drill,
             jump_fn=jump,
             visible_fields=["name", "path", "is_dir"],
-        )
+        ),
+        Command(
+            name="disks",
+            aliases=["disk", "ld"],
+            model=DiskEntry,
+            fetch_fn=list_disks,
+            drill_fn=drill_disk,
+            jump_fn=jump_disk,
+            visible_fields=["device", "mountpoint", "fstype", "percent"],
+        ),
+        Command(
+            name="disk-usage",
+            aliases=["du"],
+            model=DiskUsageEntry,
+            fetch_fn=list_du,
+            drill_fn=drill_du,
+            jump_fn=jump_du,
+            visible_fields=["name", "size_bytes", "is_dir"],
+        ),
     ]
 )
+
 
 metadata = {
     "title": "Filesystem Viewer",
