@@ -29,6 +29,7 @@ class Command:
             jump_fn = model.jump
         self.jump_fn = jump_fn
         self.visible_fields = visible_fields
+        self.command = f":{name}"
 
 
 class CommandSet:
@@ -77,25 +78,20 @@ class Router:
     def push_command(self, cmd_str: str):
         if not cmd_str.startswith(":"):
             cmd_str = f":{cmd_str}"
-        if cmd_str == ":commands":
-            commands = list(self.commands.commands.keys())
+        if cmd_str in [":command", ":commands"]:
+            commands = [
+                f"{name}\[{','.join([alias for alias in command.aliases])}]"
+                for name, command in self.commands.commands.items()
+                if name == command.command
+            ]
             self.app.notify(f"Available commands: {', '.join(commands)}")
-            # ctx = CommandContext(
-            #     command=None, data=["\n", "Available Commands", *commands]
-            # )
-            # self.stack.append(ctx)
-            # self.refresh_output()
             return
         cmd = self.commands.get(cmd_str)
         if cmd:
             self.app.notify(f'Running command "{cmd_str}"')
             # Get the current context if we have one
             current_ctx = self.stack[-1] if self.stack else None
-            # if current_ctx:
-            #     if isinstance(current_ctx.data, list):
-
-            # Pass the current context to the fetch function
-            data = cmd.fetch_fn(current_ctx)
+            data = cmd.model.fetch(current_ctx)
 
             # Create new context
             ctx = CommandContext(command=cmd, data=data)
@@ -267,27 +263,8 @@ class NinesUI(App):
                 log(
                     f"drilling in with highlighted index: {self.router.highlighted_index}"
                 )
-                log(
-                    f"drilling in with highlighted index: {self.router.highlighted_index}"
-                )
-                log(
-                    f"drilling in with highlighted index: {self.router.highlighted_index}"
-                )
-                log(
-                    f"drilling in with highlighted index: {self.router.highlighted_index}"
-                )
-                log(
-                    f"drilling in with highlighted index: {self.router.highlighted_index}"
-                )
-                log(
-                    f"drilling in with highlighted index: {self.router.highlighted_index}"
-                )
                 self.router.drill_in()
             else:
-                log(f"submitting command: {self.command_input.value}")
-                log(f"submitting command: {self.command_input.value}")
-                log(f"submitting command: {self.command_input.value}")
-                log(f"submitting command: {self.command_input.value}")
                 log(f"submitting command: {self.command_input.value}")
                 self.on_input_submitted(self.command_input)
         elif key in self._dynamic_sort_keys:

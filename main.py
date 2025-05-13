@@ -1,10 +1,13 @@
 # =========================== apps/filesystem/models.py ===========================
+import psutil
 import os
 from pydantic import BaseModel
 from pathlib import Path
 from rich.syntax import Syntax
 from ninesui import CommandSet, Command, NinesUI
 from textual import log
+
+current_path = os.getcwd()
 
 
 class FileEntry(BaseModel):
@@ -16,6 +19,54 @@ class FileEntry(BaseModel):
         syntax = Syntax.from_path(self.path)
         return syntax
         # return Path(self.path).read_text()
+
+    def drill(self, entry):
+        if entry.is_dir:
+            log("entry is a dir")
+            return self.list_dir(entry.path)
+        try:
+            content = Path(entry.path).read_text(errors="ignore")
+        except Exception as e:
+            content = f"<< ERROR: {e} >>"
+        return FileEntry(name=entry.name, path=entry.path, is_dir=False)
+
+    def jump(self, entry):
+        parent = str(Path(entry.path).parent)
+        return self.list_dir(parent)
+
+    def get_current_path(self, ctx=None) -> str:
+        if ctx and ctx.data:
+            # If we're viewing a single file, use its parent directory
+            if isinstance(ctx.data, FileEntry):
+                path = ctx.data.path
+                result = str(Path(path).parent)
+                return result
+            # If we have a list of items, use their directory
+            elif isinstance(ctx.data, list) and ctx.data:
+                if isinstance(ctx.data[0], DiskEntry):
+                    path = ctx.data[0].mountpoint
+                elif isinstance(ctx.data[0], FileEntry):
+                    path = ctx.data[0].path
+                else:
+                    path = os.getcwd()
+                result = str(Path(path).parent)
+                return result
+            elif isinstance(ctx.data, DiskEntry):
+                return ctx.data.mountpoint
+        return current_path
+
+    @classmethod
+    def fetch(cls, ctx=None):
+        path = cls.get_current_path(ctx)
+        log(f"Listing directory with path: {path}")
+        return cls.list_dir(path)
+
+    def list_dir(self, path: str = None):
+        target_path = path if path is not None else current_path
+        return [
+            FileEntry(name=e.name, path=str(e), is_dir=e.is_dir())
+            for e in Path(target_path).iterdir()
+        ]
 
 
 class DiskEntry(BaseModel):
@@ -48,101 +99,25 @@ class DiskEntry(BaseModel):
         table.add_row("Used %", f"{self.percent:.1f}%")
         return table
 
-
-import psutil
-# from .models import DiskEntry
-
-
-def list_disks(ctx=None) -> list[DiskEntry]:
-    entries = []
-    for part in psutil.disk_partitions(all=False):
-        try:
-            usage = psutil.disk_usage(part.mountpoint)
-        except PermissionError:
-            continue
-        entries.append(
-            DiskEntry(
-                device=part.device,
-                mountpoint=part.mountpoint,
-                fstype=part.fstype,
-                total=usage.total,
-                used=usage.used,
-                free=usage.free,
-                percent=usage.percent,
+    def fetch(self, ctx=None):
+        entries = []
+        for part in psutil.disk_partitions(all=False):
+            try:
+                usage = psutil.disk_usage(part.mountpoint)
+            except PermissionError:
+                continue
+            entries.append(
+                DiskEntry(
+                    device=part.device,
+                    mountpoint=part.mountpoint,
+                    fstype=part.fstype,
+                    total=usage.total,
+                    used=usage.used,
+                    free=usage.free,
+                    percent=usage.percent,
+                )
             )
-        )
-    return entries
-
-
-# =========================== apps/filesystem/config.py ===========================
-
-current_path = os.getcwd()
-
-
-def list_dir(path: str = None) -> list[FileEntry]:
-    target_path = path if path is not None else current_path
-    return [
-        FileEntry(name=e.name, path=str(e), is_dir=e.is_dir())
-        for e in Path(target_path).iterdir()
-    ]
-
-
-def drill(entry: FileEntry):
-    if entry.is_dir:
-        log("entry is a dir")
-        return list_dir(entry.path)
-    try:
-        content = Path(entry.path).read_text(errors="ignore")
-    except Exception as e:
-        content = f"<< ERROR: {e} >>"
-    return FileEntry(name=entry.name, path=entry.path, is_dir=False)
-
-
-def jump(entry: FileEntry):
-    parent = str(Path(entry.path).parent)
-    return list_dir(parent)
-
-
-def get_current_path(ctx=None) -> str:
-    log(f"Getting current path with context: {ctx}")
-    if ctx and ctx.data:
-        # If we're viewing a single file, use its parent directory
-        if isinstance(ctx.data, FileEntry):
-            path = ctx.data.path
-            result = str(Path(path).parent)
-            log(f"Using file's parent directory: {result}")
-            return result
-        # If we have a list of items, use their directory
-        elif isinstance(ctx.data, list) and ctx.data:
-            if isinstance(ctx.data[0], DiskEntry):
-                path = ctx.data[0].mountpoint
-            elif isinstance(ctx.data[0], FileEntry):
-                path = ctx.data[0].path
-            else:
-                path = os.getcwd()
-            result = str(Path(path).parent)
-            log(f"Using list context path: {result}")
-            return result
-        elif isinstance(ctx.data, DiskEntry):
-            return ctx.data.mountpoint
-    log(f"Using default current_path: {current_path}")
-    return current_path
-
-
-def list_with_context(ctx=None) -> list[FileEntry]:
-    path = get_current_path(ctx)
-    log(f"Listing directory with path: {path}")
-    return list_dir(path)
-
-
-def drill_disk(entry: DiskEntry):
-    # Treat as a folder view
-    return list_dir(entry.mountpoint)
-
-
-def jump_disk(entry: DiskEntry):
-    # Return to list of disks
-    return list_disks()
+        return entries
 
 
 class DiskUsageEntry(BaseModel):
@@ -164,6 +139,14 @@ class DiskUsageEntry(BaseModel):
                     continue
         return total
 
+    def drill(entry: DiskEntry):
+        # Treat as a folder view
+        return FileEntry().fetch(entry.mountpoint)
+
+    def jump_disk(entry: DiskEntry):
+        # Return to list of disks
+        return list_disks()
+
     def drill(self):
         if self.is_dir:
             return list_du(self.path)
@@ -172,7 +155,7 @@ class DiskUsageEntry(BaseModel):
     def jump(self):
         return self.list(str(Path(self.path).parent))
 
-    def _list(ctx=None):
+    def fetch(ctx=None):
         path = os.getcwd()
         entries = []
         for entry in Path(path).iterdir():
@@ -195,45 +178,18 @@ class DiskUsageEntry(BaseModel):
         return entries
 
 
-# class DiskUsage(Command):
-#     def __init__(self):
-#         super().__init__(
-#             name="disk-usage",
-#             aliases=["du"],
-#             model=DiskUsageEntry,
-#             visible_fields=["name", "size_bytes", "is_dir"],
-#         )
-#
-#     def fetch_fn(self, ctx=None):
-#         return list_du(ctx)
-#
-#     def drill_fn(self, entry: DiskUsageEntry):
-#         if entry.is_dir:
-#             return list_du(entry.path)
-#         return entry
-#
-#     def jump_fn(self, entry: DiskUsageEntry):
-#         return list_du(str(Path(entry.path).parent))
-
-
 commands = CommandSet(
     [
         Command(
             name="list",
             aliases=["ls"],
             model=FileEntry,
-            fetch_fn=list_with_context,
-            drill_fn=drill,
-            jump_fn=jump,
             visible_fields=["name", "path", "is_dir"],
         ),
         Command(
             name="disks",
             aliases=["disk", "ld"],
             model=DiskEntry,
-            fetch_fn=list_disks,
-            drill_fn=drill_disk,
-            jump_fn=jump_disk,
             visible_fields=["device", "mountpoint", "fstype", "percent"],
         ),
         Command(
