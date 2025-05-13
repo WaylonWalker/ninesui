@@ -1,4 +1,3 @@
-# =========================== apps/filesystem/models.py ===========================
 import psutil
 import os
 from pydantic import BaseModel
@@ -208,7 +207,6 @@ metadata = {
 }
 
 
-# =========================== __main__.py ===========================
 if __name__ == "__main__":
     ui = NinesUI(metadata=metadata, commands=commands)
     ui.run()

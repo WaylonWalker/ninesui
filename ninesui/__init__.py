@@ -97,6 +97,8 @@ class Router:
             ctx = CommandContext(command=cmd, data=data)
             self.stack.append(ctx)
             self.refresh_output()
+            log(f"Breadcrumbs: {[c.command.name for c in self.stack]}")
+            self.app.breadcrumbs.update(">".join([c.command.name for c in self.stack]))
         else:
             self.app.notify(f'Command "{cmd_str}" not found')
 
@@ -174,6 +176,7 @@ class Router:
         if len(self.stack) > 1:
             self.stack.pop()
             self.refresh_output()
+            self.app.breadcrumbs.update(">".join([c.command.name for c in self.stack]))
             return True
         return False
 
@@ -206,6 +209,7 @@ class NinesUI(App):
         super().__init__(**kwargs)
         self.router = Router(self, commands)
         self.metadata = metadata
+        self.breadcrumbs = Static()
         self.command_input = Input(placeholder=":command")
         self.output = DataTable()
         self.meta_header = MetaHeader(metadata)
@@ -215,6 +219,7 @@ class NinesUI(App):
 
     def compose(self) -> ComposeResult:
         yield self.meta_header
+        yield self.breadcrumbs
         yield self.command_input
         yield self.output_container
         yield Footer()
