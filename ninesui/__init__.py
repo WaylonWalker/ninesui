@@ -3,6 +3,7 @@ from pydantic import BaseModel
 from pydantic import model_validator
 from textual import log
 from textual.widgets import Static
+from textual.suggester import SuggestFromList
 
 
 class Command:
@@ -57,12 +58,23 @@ from dataclasses import dataclass
 from textual.widgets import DataTable
 from textual.containers import Container
 
+OPERATION_SYMBOLS = {
+    "fetch": "→",
+    "drill": "⤵",
+    "jump": "⤴",
+}
+
 
 @dataclass
 class CommandContext:
     command: Command
     data: list[BaseModel]
     selected_index: int = 0
+    operation: Optional[str] = None
+
+    @property
+    def operation_symbol(self):
+        return OPERATION_SYMBOLS.get(self.operation)
 
 
 class Router:
@@ -94,11 +106,17 @@ class Router:
             data = cmd.model.fetch(current_ctx)
 
             # Create new context
-            ctx = CommandContext(command=cmd, data=data)
+            ctx = CommandContext(command=cmd, data=data, operation="fetch")
             self.stack.append(ctx)
+
+            log(f"ctx: {ctx}")
+            log(f"ctx.data: {ctx.data}")
+            log(f"ctx.data[0]: {ctx.data[0]}")
+            log(f"ctx.model: {ctx.command.name}")
+            log(f"ctx.model.__class__.__name__: {ctx.command.model.__class__}")
+            self.app.breadcrumbs_text.append(f"{cmd_str}")
+            self.app.breadcrumbs.update(" ".join(self.app.breadcrumbs_text))
             self.refresh_output()
-            log(f"Breadcrumbs: {[c.command.name for c in self.stack]}")
-            self.app.breadcrumbs.update(">".join([c.command.name for c in self.stack]))
         else:
             self.app.notify(f'Command "{cmd_str}" not found')
 
@@ -126,8 +144,18 @@ class Router:
             if not data:
                 return
             if isinstance(data[0], BaseModel):
-                model = ctx.command.model
-                fields = ctx.command.visible_fields or model.model_fields.keys()
+                # model = ctx.command.model
+                # fields = ctx.command.visible_fields or model.model_fields.keys()
+                # fields = ctx.command.visible_fields or model.model_fields.keys()
+
+                model = data[0].__class__
+                # fields = ctx.command.visible_fields or model.model_fields.keys()
+                if hasattr(model, "nines_config"):
+                    fields = model.nines_config.get(
+                        "visible_fields", model.model_fields.keys()
+                    )
+                else:
+                    fields = model.model_fields.keys()
 
                 table = DataTable()
                 table.cursor_type = "row"
@@ -149,16 +177,22 @@ class Router:
     def drill_in(self):
         ctx = self.stack[-1]
         index = self.highlighted_index
-        log(f"drilling into {ctx.data[index]} using index {index}")
         if index >= len(ctx.data):
             return
+        log(f"drilling into {ctx.data[index]} using index {index}")
         item = ctx.data[index]
         if ctx.command.drill_fn:
-            result = ctx.command.drill_fn(item)
-            if isinstance(result, list):
-                self.stack.append(CommandContext(command=ctx.command, data=result))
-            else:
-                self.stack.append(CommandContext(command=ctx.command, data=result))
+            log(f"drilling into {item}:{type(item)}")
+            # result = ctx.command.drill_fn(item)
+            result = item.drill()
+            log(f"result: {result}")
+            ctx = CommandContext(command=ctx.command, data=result, operation="drill")
+            self.stack.append(ctx)
+
+            self.app.breadcrumbs_text.append(
+                f"{ctx.operation_symbol}{item.__class__.__name__}"
+            )
+            self.app.breadcrumbs.update(" ".join(self.app.breadcrumbs_text))
             self.refresh_output()
 
     def jump_owner(self):
@@ -167,16 +201,21 @@ class Router:
         if ctx.command.jump_fn:
             result = ctx.command.jump_fn(item)
             if isinstance(result, list):
-                self.stack.append(CommandContext(command=ctx.command, data=result))
+                self.stack.append(
+                    CommandContext(command=ctx.command, data=result, operation="jump")
+                )
             else:
-                self.stack.append(CommandContext(command=ctx.command, data=result))
+                self.stack.append(
+                    CommandContext(command=ctx.command, data=result, operation="jump")
+                )
             self.refresh_output()
 
     def go_back(self):
         if len(self.stack) > 1:
             self.stack.pop()
             self.refresh_output()
-            self.app.breadcrumbs.update(">".join([c.command.name for c in self.stack]))
+            self.app.breadcrumbs_text.pop()
+            self.app.breadcrumbs.update(" ".join(self.app.breadcrumbs_text))
             return True
         return False
 
@@ -210,7 +249,18 @@ class NinesUI(App):
         self.router = Router(self, commands)
         self.metadata = metadata
         self.breadcrumbs = Static()
-        self.command_input = Input(placeholder=":command")
+        self.breadcrumbs_text = []
+        # self.command_input = Input(placeholder=":command")
+        self.command_input = Input(
+            placeholder=":command",
+            suggester=SuggestFromList(
+                [
+                    *commands.commands.keys(),
+                    *[command.strip(":") for command in commands.commands.keys()],
+                ],
+                case_sensitive=False,
+            ),
+        )
         self.output = DataTable()
         self.meta_header = MetaHeader(metadata)
         self.output_container = Container(self.output, id="output-container")

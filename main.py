@@ -1,4 +1,5 @@
 import psutil
+from typing import ClassVar
 import os
 from pydantic import BaseModel
 from pathlib import Path
@@ -14,24 +15,36 @@ class FileEntry(BaseModel):
     path: str
     is_dir: bool
 
+    nines_config: ClassVar[dict] = {
+        "visible_fields": [
+            "name",
+            "is_dir",
+            "path",
+        ]
+    }
+
     def render(self):
         syntax = Syntax.from_path(self.path)
         return syntax
         # return Path(self.path).read_text()
 
-    def drill(self, entry):
+    @classmethod
+    def drill(cls, entry):
         if entry.is_dir:
             log("entry is a dir")
-            return self.list_dir(entry.path)
+            log(entry.path)
+            return cls.list_dir(entry.path)
         try:
             content = Path(entry.path).read_text(errors="ignore")
         except Exception as e:
             content = f"<< ERROR: {e} >>"
         return FileEntry(name=entry.name, path=entry.path, is_dir=False)
 
-    def jump(self, entry):
-        parent = str(Path(entry.path).parent)
-        return self.list_dir(parent)
+    @classmethod
+    def jump(cls, entry):
+        log(f"Jumping to parent of {entry.path}")
+        parent = str(Path(entry.path).parents[1])
+        return cls.list_dir(parent)
 
     def get_current_path(self, ctx=None) -> str:
         if ctx and ctx.data:
@@ -60,6 +73,7 @@ class FileEntry(BaseModel):
         log(f"Listing directory with path: {path}")
         return cls.list_dir(path)
 
+    @classmethod
     def list_dir(self, path: str = None):
         target_path = path if path is not None else current_path
         return [
@@ -76,6 +90,18 @@ class DiskEntry(BaseModel):
     used: int
     free: int
     percent: float
+
+    nines_config: ClassVar[dict] = {
+        "visible_fields": [
+            "device",
+            "mountpoint",
+            "fstype",
+            "total",
+            "used",
+            "free",
+            "percent",
+        ]
+    }
 
     def render(self):
         import shutil
@@ -118,6 +144,11 @@ class DiskEntry(BaseModel):
             )
         return entries
 
+    @classmethod
+    def drill(cls, entry):
+        # Treat as a folder view
+        return FileEntry().fetch(entry.mountpoint)
+
 
 class DiskUsageEntry(BaseModel):
     name: str
@@ -137,10 +168,6 @@ class DiskUsageEntry(BaseModel):
                 except Exception:
                     continue
         return total
-
-    def drill(entry: DiskEntry):
-        # Treat as a folder view
-        return FileEntry().fetch(entry.mountpoint)
 
     def jump_disk(entry: DiskEntry):
         # Return to list of disks
@@ -183,19 +210,16 @@ commands = CommandSet(
             name="list",
             aliases=["ls"],
             model=FileEntry,
-            visible_fields=["name", "path", "is_dir"],
         ),
         Command(
             name="disks",
             aliases=["disk", "ld"],
             model=DiskEntry,
-            visible_fields=["device", "mountpoint", "fstype", "percent"],
         ),
         Command(
             name="disk-usage",
             aliases=["du"],
             model=DiskUsageEntry,
-            visible_fields=["name", "size_bytes", "is_dir"],
         ),
     ]
 )
