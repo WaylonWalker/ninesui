@@ -127,6 +127,11 @@ class Router:
         ctx = self.stack[-1]
         data = ctx.data
         self.output_container.remove_children()
+        if isinstance(data, str):
+            detail = Static(data, markup=False, classes="detail")
+            detail.focus()
+            self.output_container.mount(detail)
+            return
 
         if isinstance(data, BaseModel):
             if hasattr(data, "render"):
@@ -194,6 +199,36 @@ class Router:
             )
             self.app.breadcrumbs.update(" ".join(self.app.breadcrumbs_text))
             self.refresh_output()
+
+    def on_key(self, event):
+        log(f"event.key: {event.key}")
+        log(f"self.stack: {self.stack}")
+        key = event.key
+        if len(self.stack) == 0:
+            return
+        ctx = self.stack[-1]
+        index = self.highlighted_index
+        if index >= len(ctx.data):
+            return
+        item = ctx.data[index]
+
+        if hasattr(item, "nines_config"):
+            log(f"item.nines_config: {item.nines_config}")
+            if key in item.nines_config.get("bindings", {}):
+                func = item.nines_config["bindings"][key]
+                log(f"running {func} on {item}")
+                result = getattr(item, func)()
+                log(f"result: {result}")
+                ctx = CommandContext(
+                    command=ctx.command, data=result, operation="drill"
+                )
+                self.stack.append(ctx)
+
+                self.app.breadcrumbs_text.append(
+                    f"{ctx.operation_symbol}{item.__class__.__name__}"
+                )
+                self.app.breadcrumbs.update(" ".join(self.app.breadcrumbs_text))
+                self.refresh_output()
 
     def jump_owner(self):
         ctx = self.stack[-1]
@@ -324,6 +359,8 @@ class NinesUI(App):
                 self.on_input_submitted(self.command_input)
         elif key in self._dynamic_sort_keys:
             self._dynamic_sort_keys[key]()
+        else:
+            self.router.on_key(event)
 
     def assign_sort_hotkeys(self, fields: list[str]):
         taken = set()

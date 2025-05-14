@@ -1,4 +1,5 @@
 from typing import Optional, Any, ClassVar
+from textual import log
 import os
 from pydantic import BaseModel
 from ninesui import CommandSet, Command, NinesUI
@@ -87,8 +88,21 @@ class Branch(BaseModel):
     name: str
     repo: Optional[Any] = None
     branch: Optional[Any] = None
+    nines_config: ClassVar[dict] = {
+        "visible_fields": ["name"],
+        "bindings": {"b": "test"},
+    }
 
-    nines_config: ClassVar[dict] = {"visible_fields": ["name"]}
+    # @property
+    # def nines_config(self):
+    #     return {
+    #         "visible_fields": ["name"],
+    #         "bindings": {"b": self.test},
+    #     }
+
+    def test(self):
+        log("test")
+        return "test"
 
     @classmethod
     def fetch(cls, ctx=None):
