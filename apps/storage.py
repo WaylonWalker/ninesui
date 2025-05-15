@@ -28,17 +28,17 @@ class FileEntry(BaseModel):
         return syntax
         # return Path(self.path).read_text()
 
-    @classmethod
-    def drill(cls, entry):
-        if entry.is_dir:
+    def drill(self):
+        log(f"Drilling into {self}")
+        if self.is_dir:
             log("entry is a dir")
-            log(entry.path)
-            return cls.list_dir(entry.path)
+            log(self.path)
+            return self.list_dir(self.path)
         try:
-            content = Path(entry.path).read_text(errors="ignore")
+            content = Path(self.path).read_text(errors="ignore")
         except Exception as e:
             content = f"<< ERROR: {e} >>"
-        return FileEntry(name=entry.name, path=entry.path, is_dir=False)
+        return FileEntry(name=self.name, path=self.path, is_dir=False)
 
     @classmethod
     def jump(cls, entry):
