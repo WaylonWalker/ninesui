@@ -87,6 +87,9 @@ class Router:
     def set_output_widget(self, container: Container):
         self.output_container = container
 
+    def set_hover_widget(self, container: Container):
+        self.hover_container = container
+
     def push_command(self, cmd_str: str):
         if not cmd_str.startswith(":"):
             cmd_str = f":{cmd_str}"
@@ -109,17 +112,13 @@ class Router:
             ctx = CommandContext(command=cmd, data=data, operation="fetch")
             self.stack.append(ctx)
 
-            log(f"ctx: {ctx}")
-            log(f"ctx.data: {ctx.data}")
-            log(f"ctx.data[0]: {ctx.data[0]}")
-            log(f"ctx.model: {ctx.command.name}")
-            log(f"ctx.model.__class__.__name__: {ctx.command.model.__class__}")
             self.app.breadcrumbs_text.append(f"{cmd_str}")
             self.app.breadcrumbs.update(" ".join(self.app.breadcrumbs_text))
             self.refresh_output()
         else:
             self.app.notify(f'Command "{cmd_str}" not found')
 
+    # TODO: deduplicate output/hover
     def refresh_output(self):
         if not self.stack:
             return
@@ -179,6 +178,58 @@ class Router:
                 self.app.output = self.output_container
                 return
 
+    def refresh_hover(self, data=None):
+        self.hover_container.remove_children()
+
+        if not data:
+            return
+
+        if isinstance(data, str):
+            detail = Static(data, markup=False, classes="detail")
+            detail.focus()
+            log(f"mounting detail: {detail}")
+            log(f"detail has: {data}")
+            self.hover_container.mount(detail)
+            return
+
+        if isinstance(data, BaseModel):
+            if hasattr(data, "render") and callable(data.render):
+                detail = Static(data.render(), markup=False, classes="detail")
+            else:
+                from rich.pretty import Pretty
+
+                log(f"data has no render method: {data}")
+
+                detail = Static(Pretty(data), markup=False, classes="detail")
+
+            self.hover_container.mount(detail)
+            return
+
+        if isinstance(data, list):
+            if isinstance(data[0], BaseModel):
+                model = data[0].__class__
+                # fields = ctx.command.visible_fields or model.model_fields.keys()
+                if hasattr(model, "nines_config"):
+                    fields = model.nines_config.get(
+                        "visible_fields", model.model_fields.keys()
+                    )
+                else:
+                    fields = model.model_fields.keys()
+
+                table = DataTable()
+                table.cursor_type = "row"
+                table.show_cursor = True
+                table.focus()
+                table.add_columns(*fields)
+
+                for i, item in enumerate(data):
+                    table.add_row(*(str(getattr(item, f, "")) for f in fields), key=i)
+
+                self.hover_container.mount(table)
+            if isinstance(data[0], str):
+                self.hover_container.mount(Static("\n".join(data), classes="detail"))
+                return
+
     def drill_in(self):
         ctx = self.stack[-1]
         index = self.highlighted_index
@@ -199,6 +250,7 @@ class Router:
             )
             self.app.breadcrumbs.update(" ".join(self.app.breadcrumbs_text))
             self.refresh_output()
+            self.refresh_hover()
 
     def on_key(self, event):
         log(f"event.key: {event.key}")
@@ -208,9 +260,16 @@ class Router:
             return
         ctx = self.stack[-1]
         index = self.highlighted_index
-        if index >= len(ctx.data):
+        if (
+            hasattr(ctx, "data")
+            and hasattr(ctx.data, "__len__")
+            and index >= len(ctx.data)
+        ):
             return
-        item = ctx.data[index]
+        try:
+            item = ctx.data[index]
+        except TypeError:
+            item = ctx.data
 
         if hasattr(item, "nines_config"):
             log(f"item.nines_config: {item.nines_config}")
@@ -277,6 +336,7 @@ class NinesUI(App):
     BINDINGS = [
         Binding("escape", "go_back_or_quit", "Back/Quit"),
         Binding(":", "focus_command", "Command"),
+        Binding("h", "hide_hover", "Hide hover"),
     ]
 
     def __init__(self, metadata: dict, commands: CommandSet, **kwargs):
@@ -299,6 +359,7 @@ class NinesUI(App):
         self.output = DataTable()
         self.meta_header = MetaHeader(metadata)
         self.output_container = Container(self.output, id="output-container")
+        self.hover_container = Container(self.output, id="hover-container")
         self._dynamic_sort_keys = {}  # key: sort function
         self._last_sort = {"key": None, "reverse": False}
 
@@ -307,11 +368,18 @@ class NinesUI(App):
         yield self.breadcrumbs
         yield self.command_input
         yield self.output_container
+        yield self.hover_container
         yield Footer()
+
+    def action_hide_hover(self):
+        log("hiding hover")
+        self.hover_container.display = not self.hover_container.display
 
     def on_mount(self):
         self.command_input.display = False
         self.router.set_output_widget(self.output_container)
+        self.router.set_hover_widget(self.hover_container)
+        # self.hover_container.display = False
         self.output.cursor_type = "row"
         self.output.show_cursor = True
         self.output.focus()
@@ -339,7 +407,17 @@ class NinesUI(App):
         self.router.push_command(cmd)
 
     def on_data_table_row_highlighted(self, message: DataTable.RowHighlighted):
+        log(f"highlighted index: {message.row_key.value}")
         self.router.highlighted_index = message.row_key.value
+
+        ctx = self.router.stack[-1]
+        item = ctx.data[self.router.highlighted_index]
+
+        if hasattr(item, "hover"):
+            if callable(item.hover):
+                result = item.hover()
+                log(f"hover result: {result}")
+                self.router.refresh_hover(result)
 
     def on_data_table_row_selected(self, message: DataTable.RowSelected):
         self.router.drill_in()

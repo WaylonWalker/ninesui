@@ -83,6 +83,9 @@ class Log(BaseModel):
 
         return Diff(repo=repo, commit=commit)
 
+    def hover(self):
+        return self.message
+
 
 class Branch(BaseModel):
     name: str

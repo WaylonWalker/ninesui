@@ -2,3 +2,7 @@
 #output-container {
     overflow: auto auto;
 }
+
+#hover-container {
+    overflow: auto auto;
+}
