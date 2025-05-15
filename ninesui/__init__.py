@@ -233,10 +233,15 @@ class Router:
     def drill_in(self):
         ctx = self.stack[-1]
         index = self.highlighted_index
-        if index >= len(ctx.data):
+        if hasattr(ctx.data, "__len__") and index >= len(ctx.data):
             return
-        log(f"drilling into {ctx.data[index]} using index {index}")
-        item = ctx.data[index]
+        if hasattr(ctx, "data") and hasattr(ctx.data, "__len__"):
+            item = ctx.data[index]
+        else:
+            item = ctx.data
+        if not hasattr(item, "drill"):
+            self.app.notify(f"{item.__class__.__name__} has no drill")
+            return
         if ctx.command.drill_fn:
             log(f"drilling into {item}:{type(item)}")
             # result = ctx.command.drill_fn(item)
