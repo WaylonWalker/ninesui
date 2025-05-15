@@ -225,10 +225,11 @@ class Router:
 
         if not data:
             self.hover_container.display = False
+            self.app.action_hide_hover()
             return
 
         if isinstance(data, str):
-            detail = Static(data, markup=False, classes="detail")
+            detail = Static(data, markup=False, classes="hover-detail")
             detail.focus()
             self.hover_container.mount(detail)
             # self.hover_container.display = True
@@ -236,11 +237,11 @@ class Router:
 
         if isinstance(data, BaseModel):
             if hasattr(data, "render") and callable(data.render):
-                detail = Static(data.render(), markup=False, classes="detail")
+                detail = Static(data.render(), markup=False, classes="hover-detail")
             else:
                 from rich.pretty import Pretty
 
-                detail = Static(Pretty(data), markup=False, classes="detail")
+                detail = Static(Pretty(data), markup=False, classes="hover-detail")
 
             self.hover_container.mount(detail)
             # self.hover_container.display = True
@@ -290,6 +291,8 @@ class Router:
                     f"{ctx.operation_symbol}{item.__class__.__name__}"
                 )
                 self.app.breadcrumbs.update(" ".join(self.app.breadcrumbs_text))
+
+                self.app.action_show_hover()
                 self.refresh_output()
                 self.refresh_hover()
             else:
@@ -400,7 +403,8 @@ class NinesUI(App):
     BINDINGS = [
         Binding("escape", "go_back_or_quit", "Back/Quit"),
         Binding(":", "focus_command", "Command"),
-        Binding("h", "hide_hover", "Hide hover"),
+        Binding("h", "toggle_hover", "Hover"),
+        Binding("a", "layout_wide", "Layout wide"),
     ]
 
     def __init__(self, metadata: dict, commands: CommandSet, **kwargs):
@@ -421,9 +425,12 @@ class NinesUI(App):
             ),
         )
         self.output = VimmyDataTable()
+        self.hover = Static()
+
         self.meta_header = MetaHeader(metadata)
+        self.body_container = Container(id="body-container")
         self.output_container = Container(self.output, id="output-container")
-        self.hover_container = Container(Static(), id="hover-container")
+        self.hover_container = Container(self.hover, id="hover-container")
         self.popup_container = Container(Static(), id="popup-container")
         self.header_container = Container(Static(), id="header-container")
         self._dynamic_sort_keys = {}  # key: sort function
@@ -433,12 +440,25 @@ class NinesUI(App):
         yield self.meta_header
         yield self.breadcrumbs
         yield self.command_input
-        yield self.output_container
-        yield self.hover_container
+        with self.body_container:
+            yield self.output_container
+            yield self.hover_container
         yield Footer()
 
-    def action_hide_hover(self):
+    def action_toggle_hover(self):
         self.hover_container.display = not self.hover_container.display
+        self.output_container.toggle_class("span-2")
+
+    def action_hide_hover(self):
+        self.hover_container.display = False
+        self.output_container.add_class("span-2")
+
+    def action_show_hover(self):
+        self.hover_container.display = True
+        self.output_container.remove_class("span-2")
+
+    def action_layout_wide(self):
+        self.body_container.toggle_class("layout-wide")
 
     def on_mount(self):
         self.command_input.display = False
