@@ -418,7 +418,9 @@ class NinesUI(App):
         self.router.push_command(cmd)
 
     def on_data_table_row_highlighted(self, message: DataTable.RowHighlighted):
-        log(f"highlighted index: {message.row_key.value}")
+        if message.row_key is None:
+            self.app.notify("no data to iterate over")
+            return
         self.router.highlighted_index = message.row_key.value
 
         ctx = self.router.stack[-1]
