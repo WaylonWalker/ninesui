@@ -64,6 +64,7 @@ class Diff(BaseModel):
 
 
 class Log(BaseModel):
+    repo: Optional[Any] = None
     actor: Any
     message: str
     time: Any
@@ -77,6 +78,23 @@ class Log(BaseModel):
         ]
     }
 
+    @classmethod
+    def fetch(cls, ctx=None):
+        messages = []
+        repo = Repo(os.getcwd())
+        branch = repo.active_branch
+        for commit in repo.iter_commits(branch):
+            messages.append(
+                Log(
+                    actor=commit.author.name,
+                    message=commit.message,
+                    time=commit.committed_datetime,
+                    newhexsha=commit.hexsha,
+                )
+            )
+
+        return messages
+
     def drill(self):
         repo = Repo(os.getcwd())
         commit = self.newhexsha
@@ -84,7 +102,10 @@ class Log(BaseModel):
         return Diff(repo=repo, commit=commit)
 
     def hover(self):
-        return self.message
+        repo = Repo(os.getcwd())
+        commit = self.newhexsha
+
+        return Diff(repo=repo, commit=commit)
 
 
 class Branch(BaseModel):
@@ -137,6 +158,11 @@ commands = CommandSet(
             name="branch",
             aliases=["br"],
             model=Branch,
+        ),
+        Command(
+            name="log",
+            aliases=["l"],
+            model=Log,
         ),
     ]
 )

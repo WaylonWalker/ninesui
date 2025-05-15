@@ -1,6 +1,7 @@
 
 #output-container {
     overflow: auto auto;
+    min-height: 25vh;
 }
 
 #hover-container {
