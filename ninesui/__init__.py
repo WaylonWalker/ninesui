@@ -182,6 +182,7 @@ class Router:
         self.hover_container.remove_children()
 
         if not data:
+            self.hover_container.display = False
             return
 
         if isinstance(data, str):
@@ -190,6 +191,7 @@ class Router:
             log(f"mounting detail: {detail}")
             log(f"detail has: {data}")
             self.hover_container.mount(detail)
+            self.hover_container.display = True
             return
 
         if isinstance(data, BaseModel):
@@ -203,6 +205,7 @@ class Router:
                 detail = Static(Pretty(data), markup=False, classes="detail")
 
             self.hover_container.mount(detail)
+            self.hover_container.display = True
             return
 
         if isinstance(data, list):
@@ -228,6 +231,7 @@ class Router:
                 self.hover_container.mount(table)
             if isinstance(data[0], str):
                 self.hover_container.mount(Static("\n".join(data), classes="detail"))
+                self.hover_container.display = True
                 return
 
     def drill_in(self):

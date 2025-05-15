@@ -5,4 +5,5 @@
 
 #hover-container {
     overflow: auto auto;
+    height: auto;
 }
