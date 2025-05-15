@@ -90,6 +90,9 @@ class Router:
     def set_hover_widget(self, container: Container):
         self.hover_container = container
 
+    def set_header_widget(self, container: Container):
+        self.header_container = container
+
     def push_command(self, cmd_str: str):
         if not cmd_str.startswith(":"):
             cmd_str = f":{cmd_str}"
@@ -107,7 +110,7 @@ class Router:
                 for name, command in self.commands.commands.items()
                 if name == command.command
             ]
-            self.app.notify(f"Available commands: {', '.join(commands)}")
+            self.app.notify(f"Available commands: {', '.join(commands)}", timeout=10)
             return
         cmd = self.commands.get(cmd_str)
         if cmd:
@@ -322,14 +325,14 @@ class Router:
         item = ctx.data[self.highlighted_index]
         if ctx.command.jump_fn:
             result = ctx.command.jump_fn(item)
-            if isinstance(result, list):
-                self.stack.append(
-                    CommandContext(command=ctx.command, data=result, operation="jump")
-                )
-            else:
-                self.stack.append(
-                    CommandContext(command=ctx.command, data=result, operation="jump")
-                )
+            self.stack.append(
+                CommandContext(command=ctx.command, data=result, operation="jump")
+            )
+            self.app.breadcrumbs_text.append(
+                f"{ctx.operation_symbol}{item.__class__.__name__}"
+            )
+            self.app.breadcrumbs.update(" ".join(self.app.breadcrumbs_text))
+            self.refresh_output()
             self.refresh_output()
 
     def go_back(self):
@@ -347,11 +350,20 @@ class Router:
 # =========================== ninesui/core/views.py ===========================
 
 
+class Header(Static):
+    def __init__(self, metadata: dict):
+        title = metadata.get("title", "")
+        subtitle = metadata.get("subtitle", "")
+        hotkeys = metadata.get("hotkeys", "")
+        super().__init__(f"{title} | {subtitle} | {hotkeys}")
+
+
 class MetaHeader(Static):
     def __init__(self, metadata: dict):
         title = metadata.get("title", "")
         subtitle = metadata.get("subtitle", "")
-        super().__init__(f"{title} — {subtitle}")
+        hotkeys = metadata.get("hotkeys", "")
+        super().__init__(f"{title} — {subtitle} | {hotkeys}")
 
 
 # =========================== ninesui/core/app.py ===========================
@@ -389,7 +401,8 @@ class NinesUI(App):
         self.output = DataTable()
         self.meta_header = MetaHeader(metadata)
         self.output_container = Container(self.output, id="output-container")
-        self.hover_container = Container(self.output, id="hover-container")
+        self.hover_container = Container(Static(), id="hover-container")
+        self.header_container = Container(Static(), id="header-container")
         self._dynamic_sort_keys = {}  # key: sort function
         self._last_sort = {"key": None, "reverse": False}
 
@@ -408,6 +421,7 @@ class NinesUI(App):
         self.command_input.display = False
         self.router.set_output_widget(self.output_container)
         self.router.set_hover_widget(self.hover_container)
+        self.router.set_header_widget(self.header_container)
         # self.hover_container.display = False
         self.output.cursor_type = "row"
         self.output.show_cursor = True
