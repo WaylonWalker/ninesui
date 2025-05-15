@@ -1,3 +1,11 @@
+#!/usr/bin/env -S uv run --quiet --script
+# /// script
+# requires-python = ">=3.10"
+# dependencies = [
+#     "gitpython",
+#     "ninesui @ git+https://github.com/waylonwalker/ninesui.git",
+# ]
+# ///
 from typing import Optional, Any, ClassVar
 from textual import log
 import os
