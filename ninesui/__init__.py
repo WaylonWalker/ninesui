@@ -57,12 +57,26 @@ class CommandSet:
 from dataclasses import dataclass
 from textual.widgets import DataTable
 from textual.containers import Container
+from textual.binding import Binding
 
 OPERATION_SYMBOLS = {
     "fetch": "→",
     "drill": "⤵",
     "jump": "⤴",
 }
+
+
+class VimmyDataTable(DataTable):
+    BINDINGS = DataTable.BINDINGS + [
+        Binding("j", "cursor_down", "Down", show=False),
+        Binding("k", "cursor_up", "Up", show=False),
+    ]
+
+    async def action_cursor_down(self) -> None:
+        super().action_cursor_down()
+
+    async def action_cursor_up(self) -> None:
+        super().action_cursor_up()
 
 
 @dataclass
@@ -90,6 +104,9 @@ class Router:
     def set_hover_widget(self, container: Container):
         self.hover_container = container
 
+    def set_popup_widget(self, container: Container):
+        self.popup_container = container
+
     def set_header_widget(self, container: Container):
         self.header_container = container
 
@@ -110,7 +127,12 @@ class Router:
                 for name, command in self.commands.commands.items()
                 if name == command.command
             ]
-            self.app.notify(f"Available commands: {', '.join(commands)}", timeout=10)
+            self.app.notify(
+                f"Available commands: {', '.join(commands)}",
+                title="Commands",
+                severity="command",
+                timeout=10,
+            )
             return
         cmd = self.commands.get(cmd_str)
         if cmd:
@@ -181,7 +203,7 @@ class Router:
                 else:
                     fields = model.model_fields.keys()
 
-                table = DataTable()
+                table = VimmyDataTable()
                 table.cursor_type = "row"
                 table.show_cursor = True
                 table.focus()
@@ -235,7 +257,7 @@ class Router:
                 else:
                     fields = model.model_fields.keys()
 
-                table = DataTable()
+                table = VimmyDataTable()
                 table.cursor_type = "row"
                 table.show_cursor = True
                 table.focus()
@@ -398,10 +420,11 @@ class NinesUI(App):
                 case_sensitive=False,
             ),
         )
-        self.output = DataTable()
+        self.output = VimmyDataTable()
         self.meta_header = MetaHeader(metadata)
         self.output_container = Container(self.output, id="output-container")
         self.hover_container = Container(Static(), id="hover-container")
+        self.popup_container = Container(Static(), id="popup-container")
         self.header_container = Container(Static(), id="header-container")
         self._dynamic_sort_keys = {}  # key: sort function
         self._last_sort = {"key": None, "reverse": False}
@@ -421,6 +444,7 @@ class NinesUI(App):
         self.command_input.display = False
         self.router.set_output_widget(self.output_container)
         self.router.set_hover_widget(self.hover_container)
+        self.router.set_popup_widget(self.popup_container)
         self.router.set_header_widget(self.header_container)
         # self.hover_container.display = False
         self.output.cursor_type = "row"
@@ -449,7 +473,7 @@ class NinesUI(App):
             cmd = f":{cmd}"
         self.router.push_command(cmd)
 
-    def on_data_table_row_highlighted(self, message: DataTable.RowHighlighted):
+    def on_data_table_row_highlighted(self, message: VimmyDataTable.RowHighlighted):
         if message.row_key is None:
             self.app.notify("no data to iterate over")
             return
@@ -463,7 +487,7 @@ class NinesUI(App):
                 result = item.hover()
                 self.router.refresh_hover(result)
 
-    def on_data_table_row_selected(self, message: DataTable.RowSelected):
+    def on_data_table_row_selected(self, message: VimmyDataTable.RowSelected):
         self.router.drill_in()
 
     def on_key(self, event):
