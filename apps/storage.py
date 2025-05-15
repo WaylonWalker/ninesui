@@ -1,3 +1,11 @@
+#!/usr/bin/env -S uv run --quiet --script
+# /// script
+# requires-python = ">=3.10"
+# dependencies = [
+#     "psutil",
+#     "ninesui @ git+https://github.com/waylonwalker/ninesui.git",
+# ]
+# ///
 import psutil
 from typing import ClassVar
 import os
