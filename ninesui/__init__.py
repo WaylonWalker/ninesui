@@ -314,12 +314,14 @@ class Router:
             self.refresh_output()
 
     def go_back(self):
+        self.refresh_hover()
         if len(self.stack) > 1:
             self.stack.pop()
             self.refresh_output()
             self.app.breadcrumbs_text.pop()
             self.app.breadcrumbs.update(" ".join(self.app.breadcrumbs_text))
             return True
+
         return False
 
 
