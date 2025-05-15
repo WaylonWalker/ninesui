@@ -1,3 +1,11 @@
+#!/usr/bin/env -S uv run --quiet --script
+# /// script
+# requires-python = ">=3.10"
+# dependencies = [
+#     "httpx",
+#     "ninesui @ git+https://github.com/waylonwalker/ninesui.git",
+# ]
+# ///
 from typing import Optional
 from pydantic import Field
 from typing import ClassVar
