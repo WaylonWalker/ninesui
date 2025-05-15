@@ -93,6 +93,14 @@ class Router:
     def push_command(self, cmd_str: str):
         if not cmd_str.startswith(":"):
             cmd_str = f":{cmd_str}"
+
+        if cmd_str[1].isupper():
+            is_global = True
+        else:
+            is_global = False
+
+        cmd_str = cmd_str.lower()
+
         if cmd_str in [":command", ":commands"]:
             commands = [
                 f"{name}\[{','.join([alias for alias in command.aliases])}]"
@@ -106,14 +114,23 @@ class Router:
             self.app.notify(f'Running command "{cmd_str}"')
             # Get the current context if we have one
             current_ctx = self.stack[-1] if self.stack else None
-            data = cmd.model.fetch(current_ctx)
+            item = current_ctx.data[self.highlighted_index] if current_ctx else None
+            if is_global:
+                data = cmd.model.fetch()
+            else:
+                data = cmd.model.fetch(item)
 
             # Create new context
             ctx = CommandContext(command=cmd, data=data, operation="fetch")
-            self.stack.append(ctx)
+            if is_global:
+                self.stack = [ctx]
+                self.app.breadcrumbs_text = [f"{cmd_str}"]
+                self.app.breadcrumbs.update(" ".join(self.app.breadcrumbs_text))
+            else:
+                self.stack.append(ctx)
+                self.app.breadcrumbs_text.append(f"{cmd_str}")
+                self.app.breadcrumbs.update(" ".join(self.app.breadcrumbs_text))
 
-            self.app.breadcrumbs_text.append(f"{cmd_str}")
-            self.app.breadcrumbs.update(" ".join(self.app.breadcrumbs_text))
             self.refresh_output()
         else:
             self.app.notify(f'Command "{cmd_str}" not found')
@@ -188,10 +205,8 @@ class Router:
         if isinstance(data, str):
             detail = Static(data, markup=False, classes="detail")
             detail.focus()
-            log(f"mounting detail: {detail}")
-            log(f"detail has: {data}")
             self.hover_container.mount(detail)
-            self.hover_container.display = True
+            # self.hover_container.display = True
             return
 
         if isinstance(data, BaseModel):
@@ -200,12 +215,10 @@ class Router:
             else:
                 from rich.pretty import Pretty
 
-                log(f"data has no render method: {data}")
-
                 detail = Static(Pretty(data), markup=False, classes="detail")
 
             self.hover_container.mount(detail)
-            self.hover_container.display = True
+            # self.hover_container.display = True
             return
 
         if isinstance(data, list):
@@ -231,7 +244,7 @@ class Router:
                 self.hover_container.mount(table)
             if isinstance(data[0], str):
                 self.hover_container.mount(Static("\n".join(data), classes="detail"))
-                self.hover_container.display = True
+                # self.hover_container.display = True
                 return
 
     def drill_in(self):
@@ -244,13 +257,23 @@ class Router:
         else:
             item = ctx.data
         if not hasattr(item, "drill"):
-            self.app.notify(f"{item.__class__.__name__} has no drill")
+            if hasattr(ctx, "data") and hasattr(ctx.data, "__len__"):
+                ctx = CommandContext(command=ctx.command, data=item, operation="drill")
+                self.stack.append(ctx)
+
+                self.app.breadcrumbs_text.append(
+                    f"{ctx.operation_symbol}{item.__class__.__name__}"
+                )
+                self.app.breadcrumbs.update(" ".join(self.app.breadcrumbs_text))
+                self.refresh_output()
+                self.refresh_hover()
+            else:
+                self.app.notify(f"{item.__class__.__name__} has no drill")
             return
         if ctx.command.drill_fn:
             log(f"drilling into {item}:{type(item)}")
             # result = ctx.command.drill_fn(item)
             result = item.drill()
-            log(f"result: {result}")
             ctx = CommandContext(command=ctx.command, data=result, operation="drill")
             self.stack.append(ctx)
 
@@ -263,7 +286,6 @@ class Router:
 
     def on_key(self, event):
         log(f"event.key: {event.key}")
-        log(f"self.stack: {self.stack}")
         key = event.key
         if len(self.stack) == 0:
             return
@@ -281,12 +303,9 @@ class Router:
             item = ctx.data
 
         if hasattr(item, "nines_config"):
-            log(f"item.nines_config: {item.nines_config}")
             if key in item.nines_config.get("bindings", {}):
                 func = item.nines_config["bindings"][key]
-                log(f"running {func} on {item}")
                 result = getattr(item, func)()
-                log(f"result: {result}")
                 ctx = CommandContext(
                     command=ctx.command, data=result, operation="drill"
                 )
@@ -383,7 +402,6 @@ class NinesUI(App):
         yield Footer()
 
     def action_hide_hover(self):
-        log("hiding hover")
         self.hover_container.display = not self.hover_container.display
 
     def on_mount(self):
@@ -429,7 +447,6 @@ class NinesUI(App):
         if hasattr(item, "hover"):
             if callable(item.hover):
                 result = item.hover()
-                log(f"hover result: {result}")
                 self.router.refresh_hover(result)
 
     def on_data_table_row_selected(self, message: DataTable.RowSelected):
@@ -441,12 +458,8 @@ class NinesUI(App):
             self.router.jump_owner()
         elif key == "enter":
             if not self.command_input.has_focus:
-                log(
-                    f"drilling in with highlighted index: {self.router.highlighted_index}"
-                )
                 self.router.drill_in()
             else:
-                log(f"submitting command: {self.command_input.value}")
                 self.on_input_submitted(self.command_input)
         elif key in self._dynamic_sort_keys:
             self._dynamic_sort_keys[key]()
