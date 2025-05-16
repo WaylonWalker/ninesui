@@ -461,6 +461,7 @@ class NinesUI(App):
         self.body_container.toggle_class("layout-wide")
 
     def on_mount(self):
+        self.theme = "tokyo-night"
         self.command_input.display = False
         self.router.set_output_widget(self.output_container)
         self.router.set_hover_widget(self.hover_container)
