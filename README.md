@@ -36,4 +36,4 @@ def hover(self):
 * `h` - toggle hover
 a `a` - toggle wide layout
 
-[![hovering app example](https://ninesui.wayl.one/hover.gif](https://ninesui.wayl.one/hover.mp4)
+[![hovering app example](https://ninesui.wayl.one/hover.gif)](https://ninesui.wayl.one/hover.mp4)
