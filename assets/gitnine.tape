@@ -11,7 +11,7 @@ Set Height 1080
 Type "./apps/gitnine.py"
 Enter
 Enter
-Sleep 1s
+Sleep 2s
 Type ":branch" Sleep 500ms  Enter
 Sleep 500ms
 Enter
