@@ -9,7 +9,7 @@ Set Width 1920
 Set Height 1080
 Set Theme 'Dracula'
 
-Type "./apps/swapi.py"
+Type "NINES_SCREENKEY=1 ./apps/swapi.py"
 Enter
 Sleep 2s
 Type ":person"

@@ -9,7 +9,7 @@ Set Width 1920
 Set Height 1080
 Set Theme 'Dracula'
 
-Type "./apps/gitnine.py"
+Type "NINES_SCREENKEY=1 ./apps/gitnine.py"
 Enter
 Enter
 Sleep 2s
