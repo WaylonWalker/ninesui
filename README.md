@@ -7,19 +7,19 @@ Pydantic classes.  Built on top of Textual.
 
 ## Git App Example
 
-[![git app example](assets/gitnine.gif)](assets/gitnine.mp4)
+[![git app example](https://ninesui.wayl.one/gitnine.gif)](https://ninesui.wayl.one/gitnine.mp4)
 
 
 ## SWAPI App Example
 
-[![swapi app example](assets/swapi.gif)](assets/swapi.mp4)
+[![swapi app example](https://ninesui.wayl.one/swapi.gif)](https://ninesui.wayl.one/swapi.mp4)
 
 ## Sorting
 
 ninesui automatically adds sort keys to your app by sorting by the first
 available letter of the data.
 
-[![sorting app example](assets/sort.gif)](assets/sort.mp4)
+[![sorting app example](https://ninesui.wayl.one/sort.gif)](https://ninesui.wayl.one/sort.mp4)
 
 ## Hover
 
