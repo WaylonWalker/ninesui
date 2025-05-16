@@ -53,7 +53,8 @@ class Diff(BaseModel):
 
         # Diffs
         parent = commit.parents[0] if commit.parents else NULL_TREE
-        diffs = commit.diff(parent, create_patch=True)
+        # diffs = commit.diff(parent, create_patch=True)
+        diffs = parent.diff(commit, create_patch=True)
 
         for d in diffs:
             try:
