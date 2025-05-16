@@ -34,6 +34,6 @@ def hover(self):
 ### Hover Hotkeys
 
 * `h` - toggle hover
-a `a` - toggle wide layout
+* `a` - toggle wide layout
 
 [![hovering app example](https://ninesui.wayl.one/hover.gif)](https://ninesui.wayl.one/hover.mp4)
