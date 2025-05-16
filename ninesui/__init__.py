@@ -4,6 +4,9 @@ from pydantic import model_validator
 from textual import log
 from textual.widgets import Static
 from textual.suggester import SuggestFromList
+import os
+
+SCREENKEY = os.getenv("NINES_SCREENKEY")
 
 
 class Command:
@@ -513,6 +516,9 @@ class NinesUI(App):
 
     def on_key(self, event):
         key = event.key
+        if SCREENKEY:
+            self.notify(f"key: {key}")
+
         if key == "J":
             self.router.jump_owner()
         elif key == "enter":
