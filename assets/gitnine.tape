@@ -12,7 +12,9 @@ Set Theme 'Dracula'
 Type "NINES_SCREENKEY=1 ./apps/gitnine.py"
 Enter
 Enter
-Sleep 2s
+Hide
+Sleep 5s
+Show
 Type ":branch" Sleep 500ms  Enter
 Sleep 500ms
 Enter

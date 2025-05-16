@@ -11,7 +11,9 @@ Set Theme 'Dracula'
 
 Type "NINES_SCREENKEY=1 ./apps/swapi.py"
 Enter
-Sleep 2s
+Hide
+Sleep 5s
+Show
 Type ":person"
 Sleep 250ms
 Enter
