@@ -20,3 +20,20 @@ ninesui automatically adds sort keys to your app by sorting by the first
 available letter of the data.
 
 [![sorting app example](assets/sort.gif)](assets/sort.mp4)
+
+## Hover
+
+Adding a `hover` method to a model will make it show a hovered display on
+hover.  This can be any rich renderable.
+
+``` python
+def hover(self):
+    return self
+```
+
+### Hover Hotkeys
+
+* `h` - toggle hover
+a `a` - toggle wide layout
+
+[![hovering app example](assets/hover.gif)](assets/hover.mp4)
