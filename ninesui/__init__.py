@@ -517,7 +517,7 @@ class NinesUI(App):
     def on_key(self, event):
         key = event.key
         if SCREENKEY:
-            self.notify(f"key: {key}", timeout=2)
+            self.notify(f"key: {key}", timeout=2, severity="key")
 
         if key == "J":
             self.router.jump_owner()

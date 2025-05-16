@@ -29,3 +29,9 @@ Screen {
 #hover-container.hidden {
     display: none;
 }
+
+Toast.-key {
+    margin: 0;
+    padding: 0;
+    border-left: solid $accent;
+}

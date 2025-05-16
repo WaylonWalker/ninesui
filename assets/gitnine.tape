@@ -7,6 +7,7 @@ Set Shell "bash"
 Set FontSize 32
 Set Width 1920
 Set Height 1080
+Set Theme 'Dracula'
 
 Type "./apps/gitnine.py"
 Enter

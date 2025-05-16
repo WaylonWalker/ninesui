@@ -7,11 +7,12 @@ Set Shell "bash"
 Set FontSize 32
 Set Width 1920
 Set Height 1080
+Set Theme 'Dracula'
 
 Hide
 Type "NINES_SCREENKEY=1 ./apps/storage.py"
 Enter
-Sleep 2s
+Sleep 5s
 Type ":list"
 Sleep 250ms
 Enter
