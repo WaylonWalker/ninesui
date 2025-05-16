@@ -1,4 +1,5 @@
 Output assets/gitnine.mp4
+Output assets/gitnine.gif
 
 Require echo
 

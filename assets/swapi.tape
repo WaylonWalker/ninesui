@@ -1,4 +1,5 @@
 Output assets/swapi.mp4
+Output assets/swapi.gif
 
 Require echo
 
