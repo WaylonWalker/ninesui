@@ -37,3 +37,10 @@ def hover(self):
 * `a` - toggle wide layout
 
 [![hovering app example](https://ninesui.waylonwalker.com/hover.gif)](https://ninesui.waylonwalker.com/hover.mp4)
+
+## Search
+
+Search is done by typing `/` followed by a search term and Enter.  Currently is
+simply searches if the exact text is contained anywhere in the model.
+
+[![searching app example](https://ninesui.waylonwalker.com/searchv2.gif)](https://ninesui.waylonwalker.com/searchv2.mp4)
