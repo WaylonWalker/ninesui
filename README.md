@@ -21,6 +21,14 @@ available letter of the data.
 
 [![sorting app example](https://ninesui.waylonwalker.com/sort.gif)](https://ninesui.waylonwalker.com/sort.mp4)
 
+## Drill In
+
+Pydantic classes with a `drill_in` method can be drilled into, returning either
+strings, models, or lists of models.  Notice in the git example below that when
+a file is drilled into it returns the log of that file.
+
+[![drill-in app example](https://ninesui.waylonwalker.com/drill-in.gif)](https://ninesui.waylonwalker.com/drill-in.mp4)
+
 ## Global Commands
 
 Commands can be ran with context or as a global command.  Capitalized commands
