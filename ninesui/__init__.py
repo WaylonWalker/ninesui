@@ -14,6 +14,7 @@ class Command:
         self,
         name: str,
         model: Type[BaseModel],
+        is_default: bool = False,
         fetch_fn: Optional[Callable[..., list[BaseModel]]] = None,
         aliases: Optional[list[str]] = None,
         drill_fn: Optional[Callable[[BaseModel], list[BaseModel] | BaseModel]] = None,
@@ -23,6 +24,7 @@ class Command:
         self.name = name
         self.model = model
         self.aliases = aliases
+        self.is_default = is_default
         if fetch_fn is None and hasattr(model, "_list"):
             fetch_fn = model._list
         self.fetch_fn = fetch_fn
@@ -113,7 +115,24 @@ class Router:
     def set_header_widget(self, container: Container):
         self.header_container = container
 
+    def push_search(self, query: str):
+        self.hover_container.remove_children()
+        self.app.notify(f'Searching for "{query}"')
+        # self.app.search(query)
+        ctx = self.stack[-1]
+        import copy
+
+        ctx = copy.deepcopy(ctx)
+        ctx.data = [item for item in ctx.data if query in str(item)]
+
+        self.stack.append(ctx)
+        self.app.notify(f'Searching for "{query}"')
+        self.app.breadcrumbs_text.append(f"/{query}")
+        self.app.breadcrumbs.update(" ".join(self.app.breadcrumbs_text))
+        self.refresh_output()
+
     def push_command(self, cmd_str: str):
+        self.hover_container.remove_children()
         if not cmd_str.startswith(":"):
             cmd_str = f":{cmd_str}"
 
@@ -229,6 +248,13 @@ class Router:
         if not data:
             self.hover_container.display = False
             self.app.action_hide_hover()
+            return
+
+        from rich.console import RenderableType
+
+        if isinstance(data, RenderableType):
+            detail = Static(data, markup=False, classes="hover-detail")
+            self.hover_container.mount(detail)
             return
 
         if isinstance(data, str):
@@ -406,6 +432,7 @@ class NinesUI(App):
     BINDINGS = [
         Binding("escape", "go_back_or_quit", "Back/Quit"),
         Binding(":", "focus_command", "Command"),
+        Binding("/", "focus_search", "Command"),
         Binding("h", "toggle_hover", "Hover"),
         Binding("a", "layout_wide", "Layout wide"),
     ]
@@ -413,6 +440,14 @@ class NinesUI(App):
     def __init__(self, metadata: dict, commands: CommandSet, **kwargs):
         super().__init__(**kwargs)
         self.router = Router(self, commands)
+        default_commands = [
+            command.name for command in commands.commands.values() if command.is_default
+        ]
+        if default_commands:
+            self.default_command = default_commands[0]
+        else:
+            self.default_command = None
+
         self.metadata = metadata
         self.breadcrumbs = Static()
         self.breadcrumbs_text = []
@@ -427,6 +462,7 @@ class NinesUI(App):
                 case_sensitive=False,
             ),
         )
+        self.command_mode = "command"
         self.output = VimmyDataTable()
         self.hover = Static()
 
@@ -475,9 +511,19 @@ class NinesUI(App):
         self.output.show_cursor = True
         self.output.focus()
         self.router.push_command(":commands")
+        if self.default_command:
+            self.router.push_command(self.default_command)
 
     def action_focus_command(self):
         self.command_input.display = True
+        self.command_input.placeholder = ":command"
+        self.command_mode = "command"
+        self.command_input.focus()
+
+    def action_focus_search(self):
+        self.command_input.display = True
+        self.command_input.placeholder = "/search"
+        self.command_mode = "search"
         self.command_input.focus()
 
     def action_go_back_or_quit(self):
@@ -488,6 +534,13 @@ class NinesUI(App):
             self.exit()
 
     def on_input_submitted(self, message: Input.Submitted):
+        if self.command_mode == "search":
+            query = message.value
+            self.command_input.value = ""
+            self.command_input.display = False
+            self.command_input.blur()
+            self.router.push_search(query)
+            return
         cmd = self.command_input.value
         self.command_input.value = ""
         self.command_input.display = False
@@ -530,6 +583,18 @@ class NinesUI(App):
             self._dynamic_sort_keys[key]()
         else:
             self.router.on_key(event)
+
+    def search(self, query):
+        ctx = self.router.stack[-1]
+        import copy
+
+        ctx = copy.deepcopy(ctx)
+        ctx.data = [item for item in ctx.data if query in str(item)]
+        self.router.stack.append(ctx)
+        self.notify(f'Searching for "{query}"')
+        self.breadcrumbs_text.append(f"/{query}")
+        self.breadcrumbs.update(" ".join(self.breadcrumbs_text))
+        self.router.refresh_output()
 
     def assign_sort_hotkeys(self, fields: list[str]):
         taken = set()

@@ -172,6 +172,7 @@ commands = CommandSet(
             name="log",
             aliases=["l"],
             model=Log,
+            is_default=True,
         ),
     ]
 )
