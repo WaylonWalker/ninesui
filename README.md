@@ -21,6 +21,16 @@ available letter of the data.
 
 [![sorting app example](https://ninesui.waylonwalker.com/sort.gif)](https://ninesui.waylonwalker.com/sort.mp4)
 
+## Global Commands
+
+Commands can be ran with context or as a global command.  Capitalized commands
+are ran as a global command, they reset the state of the app and do not pass
+context.  Notice in the example how `:films` returns the `films` that include
+Beru Whitesun Lars, the breadcumbs are updated to reflect this, but `:Films`
+resets the breadcrumbs and returns all films.
+
+[![global-commands app example](https://ninesui.waylonwalker.com/global-commands.gif)](https://ninesui.waylonwalker.com/global-commands.mp4)
+
 ## Hover
 
 Adding a `hover` method to a model will make it show a hovered display on
