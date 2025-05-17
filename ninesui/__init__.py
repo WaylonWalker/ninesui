@@ -171,7 +171,8 @@ class Router:
             ctx = CommandContext(command=cmd, data=data, operation="fetch")
             if is_global:
                 self.stack = [ctx]
-                self.app.breadcrumbs_text = [f"{cmd_str}"]
+                cmd_text = f"{cmd_str[0:2].upper()}{cmd_str[2:]}"
+                self.app.breadcrumbs_text = [f"{cmd_text}"]
                 self.app.breadcrumbs.update(" ".join(self.app.breadcrumbs_text))
             else:
                 self.stack.append(ctx)
