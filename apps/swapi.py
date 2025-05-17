@@ -208,6 +208,7 @@ commands = CommandSet(
             name="film",
             aliases=["f"],
             model=Film,
+            is_default=True,
         ),
     ]
 )

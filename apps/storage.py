@@ -218,6 +218,7 @@ commands = CommandSet(
             name="list",
             aliases=["ls"],
             model=FileEntry,
+            is_default=True,
         ),
         Command(
             name="disks",
