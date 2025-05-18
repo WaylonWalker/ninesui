@@ -481,7 +481,7 @@ class NinesUI(App):
         self.header_container = Container(Static(), id="header-container")
         self._dynamic_sort_keys = {}  # key: sort function
         self._last_sort = {"key": None, "reverse": False}
-        self.dynamic_bindings = command_bindings
+        self.dynamic_bindings = command_bindings or {}
 
     def compose(self) -> ComposeResult:
         yield self.meta_header
