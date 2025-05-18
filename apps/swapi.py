@@ -213,6 +213,14 @@ commands = CommandSet(
     ]
 )
 
+command_bindings = {
+    "p": "Person",
+    "t": "Planet",
+    "s": "Starship",
+    "v": "Vehicle",
+    "f": "Film",
+}
+
 metadata = {
     "title": "SWAPI Viewer",
     "subtitle": "Use :list to list files. Enter to drill in. Shift+J to go up.",
@@ -220,5 +228,7 @@ metadata = {
 
 
 if __name__ == "__main__":
-    ui = NinesUI(metadata=metadata, commands=commands)
+    ui = NinesUI(
+        metadata=metadata, commands=commands, command_bindings=command_bindings
+    )
     ui.run()

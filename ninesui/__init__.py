@@ -438,7 +438,9 @@ class NinesUI(App):
         Binding("a", "layout_wide", "Layout wide"),
     ]
 
-    def __init__(self, metadata: dict, commands: CommandSet, **kwargs):
+    def __init__(
+        self, metadata: dict, commands: CommandSet, command_bindings: dict, **kwargs
+    ):
         super().__init__(**kwargs)
         self.router = Router(self, commands)
         default_commands = [
@@ -475,6 +477,7 @@ class NinesUI(App):
         self.header_container = Container(Static(), id="header-container")
         self._dynamic_sort_keys = {}  # key: sort function
         self._last_sort = {"key": None, "reverse": False}
+        self.dynamic_bindings = command_bindings
 
     def compose(self) -> ComposeResult:
         yield self.meta_header
@@ -584,6 +587,9 @@ class NinesUI(App):
             self._dynamic_sort_keys[key]()
         else:
             self.router.on_key(event)
+
+        if key in self.dynamic_bindings:
+            self.router.push_command(self.dynamic_bindings[key])
 
     def search(self, query):
         ctx = self.router.stack[-1]
