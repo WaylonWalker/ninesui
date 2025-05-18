@@ -569,8 +569,19 @@ class NinesUI(App):
 
         if hasattr(item, "hover"):
             if callable(item.hover):
-                result = item.hover()
-                self.router.refresh_hover(result)
+                import inspect
+
+                if inspect.iscoroutinefunction(item.hover):
+                    self.run_worker(self.update_hover(item))
+                else:
+                    result = item.hover()
+                    self.router.refresh_hover(result)
+
+    async def update_hover(self, item):
+        log("updating hover")
+        result = await item.hover()
+        log(f"result: {result}")
+        self.router.refresh_hover(result)
 
     def on_data_table_row_selected(self, message: VimmyDataTable.RowSelected):
         self.router.drill_in()
