@@ -439,7 +439,11 @@ class NinesUI(App):
     ]
 
     def __init__(
-        self, metadata: dict, commands: CommandSet, command_bindings: dict, **kwargs
+        self,
+        metadata: dict,
+        commands: CommandSet,
+        command_bindings: Optional[dict] = None,
+        **kwargs,
     ):
         super().__init__(**kwargs)
         self.router = Router(self, commands)
