@@ -366,23 +366,34 @@ class Branch(BaseModel):
 class UnstagedFile(BaseModel):
     repo: Any
     path: str
+    is_new: bool = False
     nines_config: ClassVar[dict] = {
-        "visible_fields": ["path"],
+        "visible_fields": ["path", "is_new"],
         "bindings": {"s": "stage"},
     }
 
     @classmethod
     def fetch(cls, ctx=None) -> List["UnstagedFile"]:
         repo = Repo(os.getcwd())
-        diffs: List[GitDiff] = repo.index.diff(None)
-        files = []
-        for diff in diffs:
-            files.append(cls(repo=repo, path=diff.a_path))
+        files: List[UnstagedFile] = []
+        # Modified or deleted (staged diff against working tree)
+        modified_diffs: List[GitDiff] = repo.index.diff(None)
+        for diff in modified_diffs:
+            files.append(cls(repo=repo, path=diff.a_path, is_new=False))
+        # Untracked (new) files
+        for path in repo.untracked_files:
+            files.append(cls(repo=repo, path=path, is_new=True))
         return files
 
     def hover(self):
-        # show diff against HEAD
         repo = self.repo
+        # For new files, show full content; for modified, show diff
+        if self.is_new:
+            try:
+                text = Path(self.path).read_text(errors="replace")
+            except Exception:
+                return f"Cannot read {self.path}"
+            return Syntax(text, lexer=Syntax.guess_lexer(self.path), line_numbers=True)
         diff = repo.index.diff(None, paths=[self.path], create_patch=True)[0]
         patch = diff.diff.decode("utf-8", errors="replace")
         return Syntax(patch, "diff", line_numbers=False)
