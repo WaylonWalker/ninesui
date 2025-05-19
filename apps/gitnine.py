@@ -363,6 +363,35 @@ class Branch(BaseModel):
         return messages
 
 
+class UnstagedFile(BaseModel):
+    repo: Any
+    path: str
+    nines_config: ClassVar[dict] = {
+        "visible_fields": ["path"],
+        "bindings": {"s": "stage"},
+    }
+
+    @classmethod
+    def fetch(cls, ctx=None) -> List["UnstagedFile"]:
+        repo = Repo(os.getcwd())
+        diffs: List[GitDiff] = repo.index.diff(None)
+        files = []
+        for diff in diffs:
+            files.append(cls(repo=repo, path=diff.a_path))
+        return files
+
+    def hover(self):
+        # show diff against HEAD
+        repo = self.repo
+        diff = repo.index.diff(None, paths=[self.path], create_patch=True)[0]
+        patch = diff.diff.decode("utf-8", errors="replace")
+        return Syntax(patch, "diff", line_numbers=False)
+
+    def stage(self):
+        self.repo.git.add(self.path)
+        log(f"Staged {self.path}")
+
+
 commands = CommandSet(
     [
         Command(
@@ -385,6 +414,11 @@ commands = CommandSet(
             name="deleted",
             aliases=["del"],
             model=DeletedFile,
+        ),
+        Command(
+            name="unstaged",
+            aliases=["u"],
+            model=UnstagedFile,
         ),
     ]
 )
