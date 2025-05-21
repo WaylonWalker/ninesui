@@ -88,6 +88,7 @@ class VimmyDataTable(DataTable):
 class CommandContext:
     command: Command
     data: list[BaseModel]
+    item: Optional[BaseModel]
     selected_index: int = 0
     operation: Optional[str] = None
 
@@ -168,7 +169,7 @@ class Router:
                 data = cmd.model.fetch(item)
 
             # Create new context
-            ctx = CommandContext(command=cmd, data=data, operation="fetch")
+            ctx = CommandContext(command=cmd, data=data, item=item, operation="fetch")
             if is_global:
                 self.stack = [ctx]
                 cmd_text = f"{cmd_str[0:2].upper()}{cmd_str[2:]}"
@@ -364,6 +365,9 @@ class Router:
             if key in item.nines_config.get("bindings", {}):
                 func = item.nines_config["bindings"][key]
                 result = getattr(item, func)()
+                if result is None:
+                    self.refresh_current_context()
+                    return
                 ctx = CommandContext(
                     command=ctx.command, data=result, operation="drill"
                 )
@@ -373,6 +377,19 @@ class Router:
                     f"{ctx.operation_symbol}{item.__class__.__name__}"
                 )
                 self.app.breadcrumbs.update(" ".join(self.app.breadcrumbs_text))
+                self.refresh_output()
+
+    def refresh_current_context(self):
+        log("refreshing current context")
+        ctx = self.stack[-1]
+        from hashlib import md5
+
+        original_data_hash = md5(str(ctx.data).encode("utf-8")).hexdigest()
+        if ctx.operation == "fetch":
+            data = ctx.command.model.fetch(ctx.item)
+            self.stack[-1].data = data
+            current_data_hash = md5(str(data).encode("utf-8")).hexdigest()
+            if current_data_hash != original_data_hash:
                 self.refresh_output()
 
     def jump_owner(self):
@@ -397,6 +414,7 @@ class Router:
             self.refresh_output()
             self.app.breadcrumbs_text.pop()
             self.app.breadcrumbs.update(" ".join(self.app.breadcrumbs_text))
+            self.refresh_current_context()
             return True
 
         return False
@@ -436,6 +454,7 @@ class NinesUI(App):
         Binding("/", "focus_search", "Command"),
         Binding("h", "toggle_hover", "Hover"),
         Binding("a", "layout_wide", "Layout wide"),
+        Binding("r", "refresh", "Refresh"),
     ]
 
     def __init__(
@@ -507,6 +526,9 @@ class NinesUI(App):
     def action_layout_wide(self):
         self.body_container.toggle_class("layout-wide")
 
+    def action_refresh(self):
+        self.router.refresh_current_context()
+
     def on_mount(self):
         self.theme = "tokyo-night"
         self.command_input.display = False
@@ -521,6 +543,12 @@ class NinesUI(App):
         self.router.push_command(":commands")
         if self.default_command:
             self.router.push_command(self.default_command)
+        self.set_interval(1.0, self.refresh_current_context)
+
+    def refresh_current_context(self):
+        if self.command_input.has_focus:
+            return
+        self.router.refresh_current_context()
 
     def action_focus_command(self):
         self.command_input.display = True
@@ -605,6 +633,7 @@ class NinesUI(App):
 
         if key in self.dynamic_bindings:
             self.router.push_command(self.dynamic_bindings[key])
+        self.router.refresh_current_context()
 
     def search(self, query):
         ctx = self.router.stack[-1]

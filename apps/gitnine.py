@@ -363,44 +363,71 @@ class Branch(BaseModel):
         return messages
 
 
-class UnstagedFile(BaseModel):
+class FileStatus(BaseModel):
     repo: Any
     path: str
-    is_new: bool = False
+    state: str
+    staged: bool = False
+    unstaged: bool = False
+    untracked: bool = False
     nines_config: ClassVar[dict] = {
-        "visible_fields": ["path", "is_new"],
-        "bindings": {"s": "stage"},
+        "visible_fields": [
+            "path",
+            "state",
+        ],
+        "bindings": {"s": "stage", "u": "unstage"},
     }
 
     @classmethod
-    def fetch(cls, ctx=None) -> List["UnstagedFile"]:
+    def fetch(cls, ctx=None) -> List["FileStatus"]:
         repo = Repo(os.getcwd())
-        files: List[UnstagedFile] = []
-        # Modified or deleted (staged diff against working tree)
-        modified_diffs: List[GitDiff] = repo.index.diff(None)
-        for diff in modified_diffs:
-            files.append(cls(repo=repo, path=diff.a_path, is_new=False))
-        # Untracked (new) files
+        statuses = []
+        # Staged changes (index vs HEAD)
+        for diff in repo.index.diff("HEAD"):
+            statuses.append(
+                FileStatus(repo=repo, path=diff.a_path, state="staged", staged=True)
+            )
+        # Unstaged changes (working tree vs index)
+        for diff in repo.index.diff(None):
+            statuses.append(
+                FileStatus(repo=repo, path=diff.b_path, state="unstaged", unstaged=True)
+            )
+        # Untracked files
         for path in repo.untracked_files:
-            files.append(cls(repo=repo, path=path, is_new=True))
-        return files
+            statuses.append(
+                FileStatus(repo=repo, path=path, state="untracked", untracked=True)
+            )
+        # New files
+        for path in repo.git.diff("--name-only", "--diff-filter=A"):
+            statuses.append(FileStatus(repo=repo, path=path, state="new"))
+        return statuses
 
     def hover(self):
         repo = self.repo
-        # For new files, show full content; for modified, show diff
-        if self.is_new:
+        if self.untracked:
             try:
                 text = Path(self.path).read_text(errors="replace")
             except Exception:
                 return f"Cannot read {self.path}"
             return Syntax(text, lexer=Syntax.guess_lexer(self.path), line_numbers=True)
-        diff = repo.index.diff(None, paths=[self.path], create_patch=True)[0]
-        patch = diff.diff.decode("utf-8", errors="replace")
-        return Syntax(patch, "diff", line_numbers=False)
+        # Combine staged and unstaged diffs
+        patches = []
+        if self.staged:
+            for diff in repo.index.diff("HEAD", paths=[self.path], create_patch=True):
+                patches.append(diff.diff.decode("utf-8", errors="replace"))
+        if self.unstaged:
+            for diff in repo.index.diff(None, paths=[self.path], create_patch=True):
+                patches.append(diff.diff.decode("utf-8", errors="replace"))
+        combined = "\n".join(patches)
+        return Syntax(combined or "No diff available", "diff", line_numbers=False)
 
     def stage(self):
         self.repo.git.add(self.path)
         log(f"Staged {self.path}")
+
+    def unstage(self):
+        self.repo.git.reset(self.path)
+        log(f"Unstaged {self.path}")
 
 
 commands = CommandSet(
@@ -427,9 +454,9 @@ commands = CommandSet(
             model=DeletedFile,
         ),
         Command(
-            name="unstaged",
-            aliases=["u"],
-            model=UnstagedFile,
+            name="file-status",
+            aliases=["status", "st"],
+            model=FileStatus,
         ),
     ]
 )
