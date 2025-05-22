@@ -462,6 +462,7 @@ class NinesUI(App):
         metadata: dict,
         commands: CommandSet,
         command_bindings: Optional[dict] = None,
+        refresh_interval: Optional[int] = 10,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -501,6 +502,7 @@ class NinesUI(App):
         self._dynamic_sort_keys = {}  # key: sort function
         self._last_sort = {"key": None, "reverse": False}
         self.dynamic_bindings = command_bindings or {}
+        self.refresh_interval = refresh_interval
 
     def compose(self) -> ComposeResult:
         yield self.meta_header
@@ -543,7 +545,7 @@ class NinesUI(App):
         self.router.push_command(":commands")
         if self.default_command:
             self.router.push_command(self.default_command)
-        self.set_interval(1.0, self.refresh_current_context)
+        self.set_interval(self.refresh_interval, self.refresh_current_context)
 
     def refresh_current_context(self):
         if self.command_input.has_focus:

@@ -9,7 +9,6 @@ Pydantic classes.  Built on top of Textual.
 
 [![git app example](https://ninesui.waylonwalker.com/gitnine.gif)](https://ninesui.waylonwalker.com/gitnine.mp4)
 
-
 ## SWAPI App Example
 
 [![swapi app example](https://ninesui.waylonwalker.com/swapi.gif)](https://ninesui.waylonwalker.com/swapi.mp4)
@@ -62,3 +61,13 @@ Search is done by typing `/` followed by a search term and Enter.  Currently is
 simply searches if the exact text is contained anywhere in the model.
 
 [![searching app example](https://ninesui.waylonwalker.com/searchv2.gif)](https://ninesui.waylonwalker.com/searchv2.mp4)
+
+## Live Update
+
+Data refetches every `refresh_interval` seconds.
+
+``` python
+app = NinesUI(metadata=metadata, commands=commands, refresh_interval=5)
+```
+
+[![searching app example](https://ninesui.waylonwalker.com/gitadd.gif)](https://ninesui.waylonwalker.com/gitadd.mp4)

@@ -468,5 +468,5 @@ metadata = {
 
 
 if __name__ == "__main__":
-    ui = NinesUI(metadata=metadata, commands=commands)
+    ui = NinesUI(metadata=metadata, commands=commands, refresh_interval=1)
     ui.run()
