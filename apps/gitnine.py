@@ -20,7 +20,30 @@ from rich.text import Text
 from rich.console import Group
 
 
-def get_file_content_at_commit(path: str, hexsha: str) -> str:
+def is_binary(path: Path, blocksize: int = 1024) -> bool:
+    with path.open("rb") as f:
+        chunk = f.read(blocksize)
+    return b"\x00" in chunk
+
+
+def is_text_by_content(path: Path, blocksize: int = 1024) -> bool:
+    # consider “text” if we read it as UTF-8 (or some other encoding)
+    try:
+        data = path.read_bytes()[:blocksize]
+        data.decode("utf-8")
+        return True
+    except UnicodeDecodeError:
+        return False
+
+
+# Combined heuristic
+def looks_like_text(path: Path, blocksize: int = 1024) -> bool:
+    if is_binary(path, blocksize):
+        return False
+    return is_text_by_content(path, blocksize)
+
+
+def get_file_bytes_at_commit(path: str, hexsha: str) -> str:
     repo = Repo(os.getcwd())
     if hexsha is None:
         hexsha = repo.head.commit.hexsha
@@ -29,16 +52,17 @@ def get_file_content_at_commit(path: str, hexsha: str) -> str:
 
     # Try this commit first
     try:
-        return (commit.tree / path).data_stream.read().decode("utf-8", errors="replace")
+        return (
+            commit.tree / path
+        ).data_stream.read()  # .decode("utf-8", errors="replace")
     except KeyError:
         # Fallback: try parent commit if the file doesn't exist here (likely deleted)
         if commit.parents:
             parent = commit.parents[0]
             try:
                 return (
-                    (parent.tree / path)
-                    .data_stream.read()
-                    .decode("utf-8", errors="replace")
+                    (parent.tree / path).data_stream.read()
+                    # .decode("utf-8", errors="replace")
                 )
             except Exception:
                 pass
@@ -52,15 +76,24 @@ class File(BaseModel):
     repo: Any
     path: str = Field(..., description="The file path relative to the repository root")
     size: int = Field(..., description="File size in bytes")
+    commits: int = Field(..., description="Number of commits")
     blob_hexsha: str = Field(..., description="Git object SHA for the file")
     newhexsha: Optional[str] = None
-    nines_config: ClassVar[dict] = {"visible_fields": ["path", "size"]}
+    nines_config: ClassVar[dict] = {
+        "visible_fields": [
+            "path",
+            "size",
+            "commits",
+        ]
+    }
 
     @classmethod
-    def fetch(cls, ctx=None) -> List["File"]:
+    async def fetch(cls, ctx=None) -> List["File"]:
+        log("Fetching files...")
         repo = Repo(os.getcwd())
 
         if ctx and hasattr(ctx, "newhexsha"):
+            log(f"Fetching files for commit: {ctx.newhexsha}")
             commit = repo.commit(ctx.newhexsha)
             parent = commit.parents[0] if commit.parents else None
 
@@ -75,6 +108,7 @@ class File(BaseModel):
                             repo=repo,
                             path=diff.a_path,
                             size=diff.a_blob.size,
+                            commits=len(list(repo.iter_commits(paths=diff.a_path))),
                             blob_hexsha=diff.a_blob.hexsha,
                             newhexsha=ctx.newhexsha,
                         )
@@ -85,11 +119,13 @@ class File(BaseModel):
                             repo=repo,
                             path=diff.b_path,
                             size=diff.b_blob.size,
+                            commits=len(list(repo.iter_commits(paths=diff.b_path))),
                             blob_hexsha=diff.b_blob.hexsha,
                             newhexsha=ctx.newhexsha,
                         )
                     )
             return files
+        log("Fetching all files...")
         commit = repo.head.commit
         log(f"commit: {commit}")
         log(ctx)
@@ -103,6 +139,7 @@ class File(BaseModel):
                     cls(
                         repo=repo,
                         path=blob.path,
+                        commits=len(list(repo.iter_commits(paths=blob.path))),
                         size=blob.size,
                         blob_hexsha=blob.hexsha,
                     )
@@ -117,10 +154,11 @@ class File(BaseModel):
     #     return syntax
     def hover(self):
         """Return syntax-highlighted version of the file *at this specific commit*."""
-        content = get_file_content_at_commit(self.path, self.newhexsha)
-        if content is None:
-            return f"{self.path} is a binary file or could not be decoded"
-
+        file_bytes = get_file_bytes_at_commit(self.path, self.newhexsha)
+        try:
+            content = file_bytes.decode("utf-8")
+        except UnicodeDecodeError:
+            return f"{self.path} is a binary file cannot be decoded"
         return Syntax(content, lexer=Syntax.guess_lexer(self.path), line_numbers=True)
 
     def drill(self) -> List["Log"]:
@@ -158,7 +196,8 @@ class DeletedFile(File):
     }
 
     @classmethod
-    def fetch(cls, ctx=None) -> List["DeletedFile"]:
+    async def fetch(cls, ctx=None) -> List["DeletedFile"]:
+        log("Fetching deleted files...")
         repo = Repo(os.getcwd())
         deleted_files = []
 
@@ -290,7 +329,8 @@ class Log(BaseModel):
     }
 
     @classmethod
-    def fetch(cls, ctx=None):
+    async def fetch(cls, ctx=None):
+        log("Fetching logs...")
         messages = []
         repo = Repo(os.getcwd())
         branch = repo.active_branch
@@ -304,6 +344,7 @@ class Log(BaseModel):
                 )
             )
 
+        log(f"Found {len(messages)} commits")
         return messages
 
     def drill(self):
@@ -341,6 +382,7 @@ class Branch(BaseModel):
 
     @classmethod
     def fetch(cls, ctx=None):
+        log("Fetching branches...")
         repo = Repo(os.getcwd())
         return [Branch(name=b.name, repo=repo, branch=b) for b in repo.branches]
 
@@ -379,7 +421,8 @@ class FileStatus(BaseModel):
     }
 
     @classmethod
-    def fetch(cls, ctx=None) -> List["FileStatus"]:
+    async def fetch(cls, ctx=None) -> List["FileStatus"]:
+        log("Fetching file statuses...")
         repo = Repo(os.getcwd())
         statuses = []
         # Staged changes (index vs HEAD)
@@ -468,5 +511,5 @@ metadata = {
 
 
 if __name__ == "__main__":
-    ui = NinesUI(metadata=metadata, commands=commands, refresh_interval=1)
+    ui = NinesUI(metadata=metadata, commands=commands, refresh_interval=200)
     ui.run()

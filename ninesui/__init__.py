@@ -1,4 +1,5 @@
-from typing import Callable, Optional, Type
+from typing import Optional, Type
+import inspect
 from pydantic import BaseModel
 from pydantic import model_validator
 from textual import log
@@ -15,25 +16,13 @@ class Command:
         name: str,
         model: Type[BaseModel],
         is_default: bool = False,
-        fetch_fn: Optional[Callable[..., list[BaseModel]]] = None,
         aliases: Optional[list[str]] = None,
-        drill_fn: Optional[Callable[[BaseModel], list[BaseModel] | BaseModel]] = None,
-        jump_fn: Optional[Callable[[BaseModel], list[BaseModel] | BaseModel]] = None,
         visible_fields: Optional[list[str]] = None,
     ):
         self.name = name
         self.model = model
         self.aliases = aliases
         self.is_default = is_default
-        if fetch_fn is None and hasattr(model, "_list"):
-            fetch_fn = model._list
-        self.fetch_fn = fetch_fn
-        if drill_fn is None and hasattr(model, "drill"):
-            drill_fn = model.drill
-        self.drill_fn = drill_fn
-        if jump_fn is None and hasattr(model, "jump"):
-            jump_fn = model.jump
-        self.jump_fn = jump_fn
         self.visible_fields = visible_fields
         self.command = f":{name}"
 
@@ -78,9 +67,11 @@ class VimmyDataTable(DataTable):
     ]
 
     async def action_cursor_down(self) -> None:
+        log("cursor down")
         super().action_cursor_down()
 
     async def action_cursor_up(self) -> None:
+        log("cursor up")
         super().action_cursor_up()
 
 
@@ -132,8 +123,8 @@ class Router:
         self.app.breadcrumbs.update(" ".join(self.app.breadcrumbs_text))
         self.refresh_output()
 
-    def push_command(self, cmd_str: str):
-        self.hover_container.remove_children()
+    async def push_command(self, cmd_str: str):
+        log(f"pushing command: {cmd_str}")
         if not cmd_str.startswith(":"):
             cmd_str = f":{cmd_str}"
 
@@ -163,12 +154,29 @@ class Router:
             # Get the current context if we have one
             current_ctx = self.stack[-1] if self.stack else None
             item = current_ctx.data[self.highlighted_index] if current_ctx else None
+            self.output_container.remove_children()
             if is_global:
-                data = cmd.model.fetch()
+                log("Command is being ran as a global command")
+                if inspect.iscoroutinefunction(cmd.model.fetch):
+                    log("refreshing current context in worker")
+                    data = await current_ctx.command.model.fetch()
+                    log(f"Got {len(data)} items")
+                else:
+                    log("refreshing current context synchronously")
+                    data = current_ctx.command.model.fetch()
+                    log(f"Got {len(data)} items")
             else:
-                data = cmd.model.fetch(item)
+                log("Command is being ran as a local command")
+                if inspect.iscoroutinefunction(cmd.model.fetch):
+                    log("refreshing current context in worker")
+                    data = await cmd.model.fetch(item)
+                    log(f"Got {len(data)} items")
+                else:
+                    log("refreshing current context synchronously")
+                    data = cmd.model.fetch(item)
 
             # Create new context
+            log(f'creating new context for "{cmd_str}" with {len(data)} items')
             ctx = CommandContext(command=cmd, data=data, item=item, operation="fetch")
             if is_global:
                 self.stack = [ctx]
@@ -181,11 +189,13 @@ class Router:
                 self.app.breadcrumbs.update(" ".join(self.app.breadcrumbs_text))
 
             self.refresh_output()
+            await self.refresh_current_context()
         else:
             self.app.notify(f'Command "{cmd_str}" not found')
 
     # TODO: deduplicate output/hover
     def refresh_output(self):
+        log("refreshing output")
         if not self.stack:
             return
 
@@ -329,11 +339,13 @@ class Router:
             else:
                 self.app.notify(f"{item.__class__.__name__} has no drill")
             return
-        if ctx.command.drill_fn:
+        if ctx.command.model.drill:
             log(f"drilling into {item}:{type(item)}")
             # result = ctx.command.drill_fn(item)
             result = item.drill()
-            ctx = CommandContext(command=ctx.command, data=result, operation="drill")
+            ctx = CommandContext(
+                command=ctx.command, data=result, item=item, operation="drill"
+            )
             self.stack.append(ctx)
 
             self.app.breadcrumbs_text.append(
@@ -343,10 +355,11 @@ class Router:
             self.refresh_output()
             self.refresh_hover()
 
-    def on_key(self, event):
+    async def on_key(self, event):
         log(f"event.key: {event.key}")
         key = event.key
         if len(self.stack) == 0:
+            log("no stack")
             return
         ctx = self.stack[-1]
         index = self.highlighted_index
@@ -355,18 +368,23 @@ class Router:
             and hasattr(ctx.data, "__len__")
             and index >= len(ctx.data)
         ):
+            log("index out of range")
             return
         try:
+            log(f"index: {index}")
             item = ctx.data[index]
+            log(f"item: {item}")
         except TypeError:
             item = ctx.data
+            log(f"got TypeError, item: {item}")
 
         if hasattr(item, "nines_config"):
             if key in item.nines_config.get("bindings", {}):
+                log(f"binding {key} to {item.nines_config['bindings'][key]}")
                 func = item.nines_config["bindings"][key]
                 result = getattr(item, func)()
                 if result is None:
-                    self.refresh_current_context()
+                    await self.refresh_current_context()
                     return
                 ctx = CommandContext(
                     command=ctx.command, data=result, operation="drill"
@@ -378,15 +396,22 @@ class Router:
                 )
                 self.app.breadcrumbs.update(" ".join(self.app.breadcrumbs_text))
                 self.refresh_output()
+        else:
+            log(f"no binding for {key}")
 
-    def refresh_current_context(self):
-        log("refreshing current context")
+    async def refresh_current_context(self):
         ctx = self.stack[-1]
         from hashlib import md5
 
         original_data_hash = md5(str(ctx.data).encode("utf-8")).hexdigest()
         if ctx.operation == "fetch":
-            data = ctx.command.model.fetch(ctx.item)
+            if inspect.iscoroutinefunction(ctx.command.model.fetch):
+                log("refreshing current context in worker")
+                # data = self.app.run_worker(ctx.command.model.fetch, ctx.item)
+                data = await ctx.command.model.fetch(ctx.item)
+            else:
+                log("refreshing current context synchronously")
+                data = ctx.command.model.fetch(ctx.item)
             self.stack[-1].data = data
             current_data_hash = md5(str(data).encode("utf-8")).hexdigest()
             if current_data_hash != original_data_hash:
@@ -407,14 +432,14 @@ class Router:
             self.refresh_output()
             self.refresh_output()
 
-    def go_back(self):
+    async def go_back(self):
         self.refresh_hover()
         if len(self.stack) > 1:
             self.stack.pop()
             self.refresh_output()
             self.app.breadcrumbs_text.pop()
             self.app.breadcrumbs.update(" ".join(self.app.breadcrumbs_text))
-            self.refresh_current_context()
+            await self.refresh_current_context()
             return True
 
         return False
@@ -528,10 +553,10 @@ class NinesUI(App):
     def action_layout_wide(self):
         self.body_container.toggle_class("layout-wide")
 
-    def action_refresh(self):
-        self.router.refresh_current_context()
+    async def action_refresh(self):
+        await self.router.refresh_current_context()
 
-    def on_mount(self):
+    async def on_mount(self):
         self.theme = "tokyo-night"
         self.command_input.display = False
         self.router.set_output_widget(self.output_container)
@@ -542,15 +567,15 @@ class NinesUI(App):
         self.output.cursor_type = "row"
         self.output.show_cursor = True
         self.output.focus()
-        self.router.push_command(":commands")
+        await self.router.push_command(":commands")
         if self.default_command:
-            self.router.push_command(self.default_command)
+            await self.router.push_command(self.default_command)
         self.set_interval(self.refresh_interval, self.refresh_current_context)
 
-    def refresh_current_context(self):
+    async def refresh_current_context(self):
         if self.command_input.has_focus:
             return
-        self.router.refresh_current_context()
+        await self.router.refresh_current_context()
 
     def action_focus_command(self):
         self.command_input.display = True
@@ -564,14 +589,15 @@ class NinesUI(App):
         self.command_mode = "search"
         self.command_input.focus()
 
-    def action_go_back_or_quit(self):
+    async def action_go_back_or_quit(self):
         if self.command_input.has_focus:
             self.command_input.blur()
             self.command_input.display = False
-        elif not self.router.go_back():
+        back = await self.router.go_back()
+        if not back:
             self.exit()
 
-    def on_input_submitted(self, message: Input.Submitted):
+    async def on_input_submitted(self, message: Input.Submitted):
         if self.command_mode == "search":
             query = message.value
             self.command_input.value = ""
@@ -586,7 +612,7 @@ class NinesUI(App):
         # Add the : prefix if not present
         if not cmd.startswith(":"):
             cmd = f":{cmd}"
-        self.router.push_command(cmd)
+        await self.router.push_command(cmd)
 
     def on_data_table_row_highlighted(self, message: VimmyDataTable.RowHighlighted):
         if message.row_key is None:
@@ -616,7 +642,7 @@ class NinesUI(App):
     def on_data_table_row_selected(self, message: VimmyDataTable.RowSelected):
         self.router.drill_in()
 
-    def on_key(self, event):
+    async def on_key(self, event):
         key = event.key
         if SCREENKEY:
             self.notify(f"key: {key}", timeout=2, severity="key")
@@ -625,17 +651,20 @@ class NinesUI(App):
             self.router.jump_owner()
         elif key == "enter":
             if not self.command_input.has_focus:
+                log("enter pressed without command input focus")
                 self.router.drill_in()
             else:
-                self.on_input_submitted(self.command_input)
+                log("enter pressed with command input focus")
+                await self.on_input_submitted(self.command_input)
         elif key in self._dynamic_sort_keys:
             self._dynamic_sort_keys[key]()
         else:
-            self.router.on_key(event)
+            await self.router.on_key(event)
 
         if key in self.dynamic_bindings:
-            self.router.push_command(self.dynamic_bindings[key])
-        self.router.refresh_current_context()
+            await self.router.push_command(self.dynamic_bindings[key])
+
+        # await self.router.refresh_current_context()
 
     def search(self, query):
         ctx = self.router.stack[-1]
